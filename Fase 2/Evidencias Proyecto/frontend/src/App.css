@@ -1,0 +1,106 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #f5f6f8;
+  color: #1f2328;
+}
+
+.contenedor {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 32px 16px;
+}
+
+h1 { margin-bottom: 4px; }
+.subtitulo { color: #57606a; margin-top: 0; }
+
+.formulario {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: #fff;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #d0d7de;
+}
+
+button {
+  padding: 8px 18px;
+  border: none;
+  border-radius: 6px;
+  background: #0969da;
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+}
+button:disabled { background: #8c959f; cursor: default; }
+
+.error { color: #cf222e; }
+
+.resultado {
+  margin-top: 24px;
+  background: #fff;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #d0d7de;
+}
+
+.confianza {
+  margin-left: 12px;
+  font-size: 14px;
+  font-weight: normal;
+  color: #57606a;
+}
+
+table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid #d0d7de; vertical-align: top; }
+tr.ganador { background: #ddf4ff; font-weight: 600; }
+
+.archivo { color: #57606a; margin-top: -8px; }
+
+.vista-previa {
+  max-width: 100%;
+  max-height: 500px;
+  display: block;
+  margin: 12px 0;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+
+.historial-encabezado {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.historial-encabezado h2 { margin: 0; }
+.historial-encabezado select { padding: 6px; border-radius: 6px; }
+
+.vacio { color: #57606a; }
+
+button.enlace {
+  background: none;
+  color: #0969da;
+  padding: 0;
+  font-size: inherit;
+  text-align: left;
+  word-break: break-all;
+}
+button.enlace:hover { text-decoration: underline; }
+
+button.eliminar {
+  background: none;
+  color: #cf222e;
+  padding: 0;
+  font-size: 14px;
+}
+
+pre {
+  white-space: pre-wrap;
+  background: #f6f8fa;
+  padding: 12px;
+  border-radius: 6px;
+  max-height: 400px;
+  overflow: auto;
+}
