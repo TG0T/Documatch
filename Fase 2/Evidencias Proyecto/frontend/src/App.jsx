@@ -6,6 +6,38 @@ const NOMBRES = {
   orden_compra: 'Orden de compra',
 }
 
+// Solo en estos documentos se muestran los valores de cada producto
+const TIPOS_CON_VALORES = ['factura', 'orden_compra']
+
+// Cantidades en formato chileno: 1.500 / 2,5
+const formatoCantidad = (n) => (n == null ? '—' : n.toLocaleString('es-CL', { maximumFractionDigits: 3 }))
+const formatoPesos = (n) => (n == null ? '—' : `$${n.toLocaleString('es-CL', { maximumFractionDigits: 2 })}`)
+
+// Compara la suma de los valores con el neto impreso en el documento, para detectar dígitos
+// mal leídos por el OCR.
+function Verificacion({ doc }) {
+  if (doc.valores_coinciden) {
+    return (
+      <p className="verificacion ok">
+        ✓ La suma de los valores coincide con el neto del documento ({formatoPesos(doc.neto_documento)}).
+      </p>
+    )
+  }
+  if (doc.valores_coinciden === false) {
+    return (
+      <p className="verificacion revisar">
+        ⚠ Revisar los valores: la suma ({formatoPesos(doc.valor_total)}) no coincide con el neto del
+        documento ({formatoPesos(doc.neto_documento)}). Puede haber un dígito mal leído o un producto sin valor.
+      </p>
+    )
+  }
+  return (
+    <p className="verificacion revisar">
+      ⚠ No se encontró el neto en el documento: no se pudo verificar la suma de los valores.
+    </p>
+  )
+}
+
 export default function App() {
   const [archivo, setArchivo] = useState(null)
   const [resultado, setResultado] = useState(null)
@@ -65,6 +97,7 @@ export default function App() {
   }
 
   const esPdf = resultado?.archivo?.toLowerCase().endsWith('.pdf')
+  const conValores = TIPOS_CON_VALORES.includes(resultado?.tipo)
 
   return (
     <main className="contenedor">
@@ -99,6 +132,39 @@ export default function App() {
 
           {!esPdf && <img className="vista-previa" src={resultado.url_archivo} alt={resultado.archivo} />}
 
+          <h3>Mercancías</h3>
+          {resultado.items.length === 0 ? (
+            <p className="vacio">No se encontró una tabla de ítems con columna de cantidad.</p>
+          ) : (
+            <table className="items">
+              <thead>
+                <tr>
+                  <th>Descripción</th>
+                  <th className="numero">Cantidad</th>
+                  {conValores && <th className="numero">Valor total</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {resultado.items.map((item, i) => (
+                  <tr key={i}>
+                    <td>{item.descripcion || '—'}</td>
+                    <td className="numero">{formatoCantidad(item.cantidad)}</td>
+                    {conValores && <td className="numero">{formatoPesos(item.total)}</td>}
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th>Total ({resultado.items.length} ítems)</th>
+                  <th className="numero">{formatoCantidad(resultado.cantidad_total)}</th>
+                  {conValores && <th className="numero">{formatoPesos(resultado.valor_total)}</th>}
+                </tr>
+              </tfoot>
+            </table>
+          )}
+          {conValores && resultado.items.length > 0 && <Verificacion doc={resultado} />}
+
+          <h3>Clasificación</h3>
           <table>
             <thead>
               <tr><th>Tipo</th><th>Puntaje</th><th>Palabras encontradas</th></tr>
@@ -138,7 +204,7 @@ export default function App() {
         ) : (
           <table>
             <thead>
-              <tr><th>Fecha</th><th>Archivo</th><th>Tipo</th><th>Confianza</th><th></th></tr>
+              <tr><th>Fecha</th><th>Archivo</th><th>Tipo</th><th>Confianza</th><th className="numero">Cant. total</th><th className="numero">Valor total</th><th></th></tr>
             </thead>
             <tbody>
               {historial.map((doc) => (
@@ -149,6 +215,13 @@ export default function App() {
                   </td>
                   <td>{doc.nombre}</td>
                   <td>{doc.tipo === 'desconocido' ? '—' : `${Math.round(doc.confianza * 100)}%`}</td>
+                  <td className="numero">{formatoCantidad(doc.cantidad_total)}</td>
+                  <td className="numero">
+                    {formatoPesos(doc.valor_total)}
+                    {doc.valores_coinciden === false && (
+                      <span className="alerta" title="La suma no coincide con el neto del documento: revisar"> ⚠</span>
+                    )}
+                  </td>
                   <td>
                     <button className="eliminar" onClick={() => eliminar(doc.id)}>Eliminar</button>
                   </td>

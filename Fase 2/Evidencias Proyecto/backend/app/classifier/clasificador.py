@@ -33,7 +33,15 @@ def normalizar(texto: str) -> str:
 
 def encabezado(texto: str) -> str:
     lineas = [l for l in texto.splitlines() if l.strip()]
-    return "\n".join(lineas[:LINEAS_ENCABEZADO])
+    # Las referencias a otros documentos no son el título: en una factura, "Referencias: Orden de
+    # Compra N° 8832" o un recuadro "REFERENCIAS" con "ORDEN DE COMPRA FOLIO 22438" debajo.
+    sin_referencias = []
+    for i, linea in enumerate(lineas):
+        es_referencia = re.search(r"\breferencias?\b", linea)
+        bajo_referencias = i > 0 and re.fullmatch(r"\W*referencias?\W*", lineas[i - 1])
+        if not (es_referencia or bajo_referencias):
+            sin_referencias.append(linea)
+    return "\n".join(sin_referencias[:LINEAS_ENCABEZADO])
 
 
 def tiene_titulo(patron: str, cabecera: str) -> bool:

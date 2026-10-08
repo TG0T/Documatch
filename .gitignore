@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node / build del frontend
+node_modules/
+dist/
+
+# Datos locales del backend (base SQLite y archivos subidos)
+**/backend/data/
+
+# Variables de entorno
+.env
+.env.*
+
+# Sistema / editor
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.log
+
+# Archivos temporales de Office (~$archivo.docx)
+~$*

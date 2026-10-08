@@ -96,3 +96,30 @@ def test_texto_sin_relacion():
 def test_tolera_errores_de_ocr_en_guia():
     # Tesseract a veces lee la "í" de guía como "1" o "l".
     assert clasificar("GU1A DE DESPACHO\nTransportista: X").tipo == "guia_despacho"
+
+
+# Texto del OCR de una factura cuyo título quedó al final de una línea (venía en un recuadro) y
+# con un recuadro de referencias a la OC que la originó antes de la tabla de ítems.
+FACTURA_CON_REFERENCIAS = """
+NILO & ARROYO CHILELIFT LTDA R.U.T.: 76.345.095-3
+CHILELIFT VENTA Y DISTRIBUCION DE EQUIPOS — FACTURA ELECTRONICA
+CASA MATRIZ: AV. AMERICO VESPUCIO 1380
+QUILICURA - SANTIAGO N° 15962
+S.I.I - SANTIAGO PONIENTE
+Señor(es): Comercial Ejemplo Ltda Fecha: 18 de noviembre de 2021
+Rut: 77.111.111-1 Forma de pago: Credito
+Giro: Comercializacion de neumaticos
+REFERENCIAS
+ORDEN DE COMPRA FOLIO 22438 DEL 2021-11-18
+FICHA Descripción Cantidad Precio Unit. Descuento Total
+CGA900 EQUIPO PARA LA CORRECION DE CAMBER 1 849.000 849.000
+Monto Neto: 849.000
+Exento: 0
+19% IVA: 161.310
+"""
+
+
+def test_referencia_a_orden_de_compra_no_es_el_titulo():
+    resultado = clasificar(FACTURA_CON_REFERENCIAS)
+    assert resultado.tipo == "factura"
+    assert "[título en encabezado]" not in resultado.coincidencias["orden_compra"]

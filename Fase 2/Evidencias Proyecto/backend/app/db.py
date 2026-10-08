@@ -1,5 +1,5 @@
 """Conexión a la base de datos (SQLite por defecto)."""
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app import config
@@ -23,3 +23,18 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def agregar_columnas_faltantes():
+    """create_all no modifica tablas existentes: agrega las columnas nuevas de los modelos
+    a una base creada con una versión anterior (sin perder los datos)."""
+    inspector = inspect(engine)
+    with engine.begin() as conexion:
+        for tabla in Base.metadata.sorted_tables:
+            if not inspector.has_table(tabla.name):
+                continue
+            existentes = {c["name"] for c in inspector.get_columns(tabla.name)}
+            for columna in tabla.columns:
+                if columna.name not in existentes:
+                    tipo = columna.type.compile(engine.dialect)
+                    conexion.execute(text(f'ALTER TABLE {tabla.name} ADD COLUMN "{columna.name}" {tipo}'))

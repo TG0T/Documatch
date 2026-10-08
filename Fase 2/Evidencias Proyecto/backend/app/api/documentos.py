@@ -11,10 +11,14 @@ from app import config
 from app.classifier.clasificador import clasificar
 from app.classifier.palabras_clave import TIPOS_DOCUMENTO
 from app.db import get_db
+from app.extraccion.mercancias import extraer_items, montos_netos, verificar_valores
 from app.models import Documento
-from app.services.ocr import EXTENSIONES_SOPORTADAS, extraer_texto
+from app.services.ocr import EXTENSIONES_SOPORTADAS, extraer
 
 router = APIRouter(prefix="/api/documentos", tags=["documentos"])
+
+# Solo en estos documentos se guarda el valor de cada producto (la guía de despacho no vende).
+TIPOS_CON_VALORES = {"factura", "orden_compra"}
 
 
 def a_dict(doc: Documento, incluir_texto: bool = True) -> dict:
@@ -28,10 +32,15 @@ def a_dict(doc: Documento, incluir_texto: bool = True) -> dict:
         "coincidencias": doc.coincidencias,
         "tamano": doc.tamano,
         "fecha_creacion": doc.fecha_creacion.isoformat() if doc.fecha_creacion else None,
+        "cantidad_total": doc.cantidad_total,
+        "valor_total": doc.valor_total,
+        "neto_documento": doc.neto_documento,
+        "valores_coinciden": doc.valores_coinciden,
         "url_archivo": f"/api/documentos/{doc.id}/archivo",
     }
     if incluir_texto:
         datos["texto"] = doc.texto
+        datos["items"] = doc.items or []
     return datos
 
 
@@ -54,11 +63,15 @@ async def analizar_documento(archivo: UploadFile, db: Session = Depends(get_db))
 
     try:
         # El OCR es lento y bloqueante: lo corremos fuera del event loop.
-        texto = await run_in_threadpool(extraer_texto, datos, extension)
+        extraccion = await run_in_threadpool(extraer, datos, extension)
     except Exception as e:
         raise HTTPException(422, f"No se pudo leer el documento: {e}")
 
-    resultado = clasificar(texto)
+    resultado = clasificar(extraccion.texto)
+    items = extraer_items(extraccion.paginas)
+    con_valores = resultado.tipo in TIPOS_CON_VALORES
+    totales = [i.total for i in items if i.total is not None] if con_valores else []
+    coinciden, neto = verificar_valores(items, montos_netos(extraccion.paginas)) if con_valores else (None, None)
 
     nombre_guardado = f"{uuid.uuid4().hex}{extension}"
     ruta = config.ARCHIVOS_DIR / nombre_guardado
@@ -73,7 +86,15 @@ async def analizar_documento(archivo: UploadFile, db: Session = Depends(get_db))
         confianza=resultado.confianza,
         puntajes=resultado.puntajes,
         coincidencias=resultado.coincidencias,
-        texto=texto,
+        texto=extraccion.texto,
+        items=[
+            {"descripcion": i.descripcion, "cantidad": i.cantidad, "total": i.total if con_valores else None}
+            for i in items
+        ],
+        cantidad_total=sum(i.cantidad for i in items) if items else None,
+        valor_total=sum(totales) if totales else None,
+        neto_documento=neto,
+        valores_coinciden=coinciden,
     )
     try:
         db.add(doc)
