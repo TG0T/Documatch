@@ -8,6 +8,7 @@ venv/
 # Node / build del frontend
 node_modules/
 dist/
+.vite/
 
 # Datos locales del backend (base SQLite y archivos subidos)
 **/backend/data/
