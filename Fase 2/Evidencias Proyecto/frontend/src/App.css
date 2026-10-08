@@ -46,6 +46,16 @@ button:disabled { background: #8c959f; cursor: default; }
   border: 1px solid #d0d7de;
 }
 
+.codigo {
+  margin-left: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #ddf4ff;
+  color: #0969da;
+  font-family: ui-monospace, monospace;
+  font-size: 16px;
+}
+
 .confianza {
   margin-left: 12px;
   font-size: 14px;

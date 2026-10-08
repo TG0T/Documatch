@@ -239,3 +239,19 @@ def test_verificar_valores():
     assert verificar_valores(items, []) == (None, None)
     # Si falta el valor de algún ítem, hay que revisar
     assert verificar_valores([Item("A", 2, None)], [100]) == (False, 100)
+
+
+def test_encabezado_partido_en_dos_filas_por_foto_torcida():
+    # En una foto algo torcida el OCR deja "Codigo Cant." y "Descripcion Total" en filas distintas,
+    # y el total del ítem queda un poco más arriba que su cantidad: no debe leerse como cantidad.
+    palabras = pagina(
+        [("Descripcion", 400), ("P.Unitario", 700), ("Total", 900)],
+        [("138.693", 900)],
+        [("KYO-TK-3462", 0), ("1", 250), ("TONER NEGRO", 300)],
+        interlineado=12,
+    )
+    palabras += pagina([("Codigo", 0), ("Cant.", 250)], interlineado=12)[:2]
+    for p in palabras[-2:]:
+        p.y0 += 6
+        p.y1 += 6
+    assert resumen([palabras]) == [("TONER NEGRO", 1)]

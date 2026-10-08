@@ -1,4 +1,4 @@
-from app.classifier.clasificador import DESCONOCIDO, clasificar
+from app.classifier.clasificador import DESCONOCIDO, clasificar, codigo, normalizar, numero_documento
 
 FACTURA = """
 R.U.T.: 76.123.456-7
@@ -48,7 +48,7 @@ GOBIERNO
 Dirección TEATINOS N' 92,PISO 8, OF 853 Unidad de Compra: — Ministerio Secretaría General de
 Toléfono : 56-2-26945301 Fecha Envio OC. : 12-08-2022 20:11:04
 Estado : Aceptada
-ORDEN DE COMPRA N*: 876-329-SE22
+ORDEN DECOMPRA — N”: 876-329-SE22
 SEÑOR (ES) : GO RESEARCH SPA
 INOMBRE ORDEN DE COMPRA: — SC 1404 ESTUDIO ESTRATEGICO CUANTITATIVO
 [FECHA ENTREGA PRODUCTOS :
@@ -123,3 +123,46 @@ def test_referencia_a_orden_de_compra_no_es_el_titulo():
     resultado = clasificar(FACTURA_CON_REFERENCIAS)
     assert resultado.tipo == "factura"
     assert "[título en encabezado]" not in resultado.coincidencias["orden_compra"]
+
+
+def test_numero_de_cada_tipo():
+    assert clasificar(FACTURA).numero == "4521"
+    assert clasificar(GUIA).numero == "1203"
+    assert clasificar(ORDEN).numero == "8832"
+
+
+def test_numero_con_guiones_y_letras():
+    # No confunde el número de la OC con el de la dirección ("TEATINOS N' 92").
+    assert clasificar(ORDEN_MERCADO_PUBLICO).numero == "876-329-SE22"
+
+
+def test_numero_en_otra_linea_y_con_puntos_de_miles():
+    # En los recuadros del SII el título y el número van en líneas distintas.
+    texto = "R.U.T.: 96.502.540-5\nGUIA DE DESPACHO ELECTRONICA\nN° 178.880\nS.I.I. - SANTIAGO ORIENTE"
+    assert clasificar(texto).numero == "178880"
+
+
+def test_numero_de_la_referencia_no_cuenta():
+    # El "N° 15962" de la factura, no el folio de la OC de las referencias.
+    assert clasificar(FACTURA_CON_REFERENCIAS).numero == "15962"
+
+
+def test_codigo_con_prefijo_del_tipo():
+    assert codigo("orden_compra", "123") == "OC-123"
+    assert codigo("guia_despacho", "123") == "G-123"
+    assert codigo("factura", "123") == "F-123"
+    assert codigo("factura", None) is None
+    assert codigo(DESCONOCIDO, "123") is None
+
+
+def test_numero_del_recuadro_sii_leido_por_el_ocr():
+    # Texto real del OCR: la "º" chica de "Nº1" se lee como un 2 ("n21"), y el número queda al
+    # final de una línea de la columna de la izquierda.
+    texto = """R.U.T.:77.777.777-0
+EMPRESA DE SEVICIOS ABC
+SPA FACTURA DE COMPRA
+Giro:SERVICIOS RELACIONADOS CON LA ELECTRONICA
+ACUICULTURA MARINA
+CALLE FALSA 123 508- SANTIAGO N21
+S.I.I. - SANTIAGO CENTRO"""
+    assert numero_documento("factura", normalizar(texto)) == "1"

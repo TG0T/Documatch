@@ -114,7 +114,12 @@ def quitar_lineas(imagen: Image.Image) -> Image.Image:
 def preprocesar(imagen: Image.Image) -> Image.Image:
     """Mejora la imagen para el OCR: escala de grises, contraste, tamaño mínimo y sin líneas de tabla."""
     imagen = ImageOps.exif_transpose(imagen)  # respeta la rotación de fotos de celular
-    imagen = ImageOps.grayscale(imagen)
+    # Gris = promedio entre la luminancia y el canal más oscuro, para que el texto de color quede
+    # más oscuro. Con solo la luminancia un título rojo ("GUIA DE DESPACHO") quedaba gris claro y
+    # Tesseract lo omitía; con solo el canal más oscuro se perdía la fila de un ítem.
+    luminancia = np.array(ImageOps.grayscale(imagen), np.uint16)
+    canal_minimo = np.array(imagen.convert("RGB")).min(axis=2)
+    imagen = Image.fromarray(((luminancia + canal_minimo) // 2).astype(np.uint8))
     imagen = ImageOps.autocontrast(imagen)
     # Tesseract funciona mejor con texto grande; escalamos imágenes pequeñas.
     if imagen.width < 1500:

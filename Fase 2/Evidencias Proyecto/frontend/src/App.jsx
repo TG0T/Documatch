@@ -121,6 +121,7 @@ export default function App() {
         <section className="resultado">
           <h2>
             {resultado.nombre}
+            {resultado.codigo && <span className="codigo">{resultado.codigo}</span>}
             {resultado.tipo !== 'desconocido' && (
               <span className="confianza">{Math.round(resultado.confianza * 100)}% confianza</span>
             )}
@@ -129,6 +130,10 @@ export default function App() {
             {resultado.archivo} ·{' '}
             <a href={resultado.url_archivo} target="_blank" rel="noreferrer">Abrir original</a>
           </p>
+
+          {resultado.tipo !== 'desconocido' && !resultado.codigo && (
+            <p className="verificacion revisar">⚠ No se encontró el número del documento.</p>
+          )}
 
           {!esPdf && <img className="vista-previa" src={resultado.url_archivo} alt={resultado.archivo} />}
 
@@ -204,7 +209,7 @@ export default function App() {
         ) : (
           <table>
             <thead>
-              <tr><th>Fecha</th><th>Archivo</th><th>Tipo</th><th>Confianza</th><th className="numero">Cant. total</th><th className="numero">Valor total</th><th></th></tr>
+              <tr><th>Fecha</th><th>Archivo</th><th>Tipo</th><th>N° documento</th><th>Confianza</th><th className="numero">Cant. total</th><th className="numero">Valor total</th><th></th></tr>
             </thead>
             <tbody>
               {historial.map((doc) => (
@@ -214,6 +219,7 @@ export default function App() {
                     <button className="enlace" onClick={() => verDocumento(doc.id)}>{doc.archivo}</button>
                   </td>
                   <td>{doc.nombre}</td>
+                  <td>{doc.codigo ?? '—'}</td>
                   <td>{doc.tipo === 'desconocido' ? '—' : `${Math.round(doc.confianza * 100)}%`}</td>
                   <td className="numero">{formatoCantidad(doc.cantidad_total)}</td>
                   <td className="numero">

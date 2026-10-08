@@ -17,6 +17,8 @@ class Documento(Base):
     tamano: Mapped[int] = mapped_column(Integer)
 
     tipo: Mapped[str] = mapped_column(String(50), index=True)
+    # Número impreso en el documento ("876-329-SE22"); None si el OCR no lo encontró
+    numero: Mapped[str | None] = mapped_column(String(50), nullable=True)
     confianza: Mapped[float] = mapped_column(Float)
     puntajes: Mapped[dict] = mapped_column(JSON)
     coincidencias: Mapped[dict] = mapped_column(JSON)

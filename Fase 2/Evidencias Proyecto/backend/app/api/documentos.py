@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import config
-from app.classifier.clasificador import clasificar
+from app.classifier.clasificador import clasificar, codigo
 from app.classifier.palabras_clave import TIPOS_DOCUMENTO
 from app.db import get_db
 from app.extraccion.mercancias import extraer_items, montos_netos, verificar_valores
@@ -27,6 +27,8 @@ def a_dict(doc: Documento, incluir_texto: bool = True) -> dict:
         "archivo": doc.nombre_original,
         "tipo": doc.tipo,
         "nombre": TIPOS_DOCUMENTO.get(doc.tipo, {}).get("nombre", "Desconocido"),
+        "numero": doc.numero,
+        "codigo": codigo(doc.tipo, doc.numero),  # "OC-123", "G-123", "F-123"
         "confianza": doc.confianza,
         "puntajes": doc.puntajes,
         "coincidencias": doc.coincidencias,
@@ -83,6 +85,7 @@ async def analizar_documento(archivo: UploadFile, db: Session = Depends(get_db))
         tipo_contenido=archivo.content_type or "application/octet-stream",
         tamano=len(datos),
         tipo=resultado.tipo,
+        numero=resultado.numero,
         confianza=resultado.confianza,
         puntajes=resultado.puntajes,
         coincidencias=resultado.coincidencias,

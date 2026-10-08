@@ -110,7 +110,7 @@ class Tabla:
     cantidad: Columna
     descripcion: Columna | None
     total: Columna | None
-    filas_encabezado: int  # 1, o 2 si el encabezado sigue en una segunda línea ("Precio" / "Total")
+    filas_encabezado: int  # cuántas filas ocupa el encabezado (sigue abajo: "Precio" / "Total")
 
 
 def a_numero(texto: str, decimal: str = ",") -> float | None:
@@ -190,9 +190,28 @@ def completar_encabezado(celdas: list[Palabra], segunda: Fila) -> None:
             celdas[i] = Palabra(f"{c.texto} {p.texto}", min(c.x0, p.x0), c.y0, max(c.x1, p.x1), max(c.y1, p.y1))
 
 
+def mitad_de_encabezado(fila: Fila, otra: Fila, alto: float) -> bool:
+    """`otra` es parte del mismo encabezado que `fila`: en una foto algo torcida el encabezado
+    queda partido en dos filas casi a la misma altura ("Codigo Cant." / "Descripcion Total")."""
+    solape = min(fila.y1, otra.y1) - max(fila.y0, otra.y0)
+    return (solape > alto / 2
+            and all(a_numero(p.texto) is None for p in otra.palabras)
+            and es_encabezado(otra.texto))
+
+
 def leer_encabezado(filas: list[Fila], i: int, alto: float) -> Tabla | None:
     """Si filas[i] es el encabezado de una tabla de ítems devuelve sus columnas; si no, None."""
     fila = filas[i]
+    unidas = 0  # filas siguientes que eran parte de este mismo encabezado
+    palabras = list(fila.palabras)
+    if i > 0 and mitad_de_encabezado(fila, filas[i - 1], alto):
+        palabras += filas[i - 1].palabras
+    if i + 1 < len(filas) and mitad_de_encabezado(fila, filas[i + 1], alto):
+        palabras += filas[i + 1].palabras
+        unidas = 1
+    if len(palabras) > len(fila.palabras):
+        fila = Fila(sorted(palabras, key=lambda p: p.x0))
+    i += unidas
     celdas = celdas_encabezado(fila, alto)
     textos = [normalizar(c.texto) for c in celdas]
     i_cantidad = next((j for j, t in enumerate(textos) if re.search(ENCABEZADO_CANTIDAD, t)), None)
@@ -201,7 +220,7 @@ def leer_encabezado(filas: list[Fila], i: int, alto: float) -> Tabla | None:
 
     # Encabezado en dos líneas: la segunda está pegada a la primera, no trae números y tiene
     # palabras de encabezado ("Unitario*", "Total*").
-    filas_encabezado = 1
+    filas_encabezado = 1 + unidas
     if i + 1 < len(filas):
         segunda = filas[i + 1]
         if (segunda.y0 - fila.y1 < alto
@@ -209,7 +228,7 @@ def leer_encabezado(filas: list[Fila], i: int, alto: float) -> Tabla | None:
                 and es_encabezado(segunda.texto)):
             completar_encabezado(celdas, segunda)
             textos = [normalizar(c.texto) for c in celdas]
-            filas_encabezado = 2
+            filas_encabezado += 1
 
     i_descripcion = next(
         (j for j, t in enumerate(textos) if j != i_cantidad and re.search(ENCABEZADO_DESCRIPCION, t)), None
