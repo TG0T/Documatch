@@ -26,8 +26,9 @@ PUNTAJE_MINIMO = 5
 # Cómo se escribe "número" después del título. El OCR suele leer "N°" como "n*", "n'", "n”" o "n?".
 MARCA_NUMERO = r"(n\s?[°º*'’\"”?.:]|nro\b|numero\b|folio\b)"
 
-# El número del documento: "4521", "178.880", "876-329-SE22" (órdenes de Mercado Público).
-NUMERO_DOCUMENTO = r"[a-z0-9]*\d[a-z0-9.]*(?:-[a-z0-9]+)*"
+# El número del documento: "4521", "178.880" (o "12,480" si el OCR lee el punto como coma),
+# "876-329-SE22" (órdenes de Mercado Público).
+NUMERO_DOCUMENTO = r"[a-z0-9]*\d[a-z0-9]*(?:[.,]\d{3})*(?:-[a-z0-9]+)*"
 
 # El SII imprime "Nº" con la "º" chica y subrayada, y el OCR la lee como un 2 pegado al número:
 # "Nº46" queda "n246". Solo se aplica a "n2" pegado al número, sin espacio.

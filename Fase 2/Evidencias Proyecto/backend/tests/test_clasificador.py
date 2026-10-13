@@ -166,3 +166,33 @@ ACUICULTURA MARINA
 CALLE FALSA 123 508- SANTIAGO N21
 S.I.I. - SANTIAGO CENTRO"""
     assert numero_documento("factura", normalizar(texto)) == "1"
+
+
+# Texto real del OCR de una factura con una tabla de referencias a su guía y su OC. El título quedó
+# al final de una línea y el número en la siguiente, con coma en vez de punto.
+FACTURA_TABLA_REFERENCIAS = """
+DISTRIBUIDORA Y SOLUCIONES TECNOLÓGICAS REDTECH SpA R.U.T.: 77.319.452-K
+Giro: VENTA AL POR MAYOR DE EQUIPOS DE COMPUTACIÓN p
++ E DT EC H Casa Matriz: Av. Providencia 1650, Of. 402, Providencia, Santiago FACTURA ELECTRÓNICA
+Contacto: ventasQredtech.cl | +56 2 2234 8900 N* 12,480
+S.l.1. - SANTIAGO ORIENTE
+07 de Octubre de 2026
+Señor(es): CONSTRUCTORA Y SERVICIOS LOS ANDES SpA R.U.T. : 76.842.190-3
+Giro : OBRAS MENORES DE CONSTRUCCIÓN Ciudad : SANTIAGO
+Pago : Crédito 30 días
+REFERENCIAS A OTROS DOCUMENTOS
+TIPO DOCUMENTO FOLIO FECHA RAZÓN REFERENCIA
+Guía de Despacho 5821 05-10-2026 Recepción conforme de mercadería
+Orden de Compra 1042 02-10-2026 Aprobación comercial de adquisición
+CANTIDAD DETALLE UNITARIO %DESC. TOTAL
+4,00 Switch Administrable 24P Gigabit PoE+ (SW-GB24-P) 185.000 0 740.000
+TOTAL NETO 1.505.000
+"""
+
+
+def test_factura_con_tabla_de_referencias():
+    resultado = clasificar(FACTURA_TABLA_REFERENCIAS)
+    assert resultado.tipo == "factura"
+    assert resultado.numero == "12480"
+    assert "[título en encabezado]" not in resultado.coincidencias["guia_despacho"]
+    assert "[título en encabezado]" not in resultado.coincidencias["orden_compra"]

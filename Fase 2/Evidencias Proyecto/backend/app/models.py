@@ -34,4 +34,9 @@ class Documento(Base):
     neto_documento: Mapped[float | None] = mapped_column(Float, nullable=True)
     valores_coinciden: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
+    # Guías y facturas: la orden de compra a la que corresponden (su fila en el dashboard)
+    orden_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Documento de ejemplo creado desde el dashboard, sin archivo
+    dummy: Mapped[bool | None] = mapped_column(Boolean, default=False)
+
     fecha_creacion: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

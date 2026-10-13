@@ -17,6 +17,10 @@ from app.classifier.palabras_clave import (
 
 DESCONOCIDO = "desconocido"
 
+# Fila de una tabla de referencias: su encabezado o un documento referenciado ("Guía de Despacho 5821").
+FILA_REFERENCIA = (r"^\W*(tipo\s+(de\s+)?doc|folio\b|nota\s+de\s+(credito|debito)|"
+                   + "|".join(t["titulo"] for t in TIPOS_DOCUMENTO.values()) + ")")
+
 
 @dataclass
 class Resultado:
@@ -46,21 +50,27 @@ def normalizar(texto: str) -> str:
 def encabezado(texto: str, lineas_maximas: int = LINEAS_ENCABEZADO) -> str:
     lineas = [l for l in texto.splitlines() if l.strip()]
     # Las referencias a otros documentos no son el título: en una factura, "Referencias: Orden de
-    # Compra N° 8832" o un recuadro "REFERENCIAS" con "ORDEN DE COMPRA FOLIO 22438" debajo.
+    # Compra N° 8832", o un recuadro "REFERENCIAS" con una tabla debajo ("Tipo documento Folio
+    # Fecha" / "Guía de Despacho 5821" / "Orden de Compra 1042").
     sin_referencias = []
+    en_referencias = False
     for i, linea in enumerate(lineas):
-        es_referencia = re.search(r"\breferencias?\b", linea)
-        bajo_referencias = i > 0 and re.fullmatch(r"\W*referencias?\W*", lineas[i - 1])
-        if not (es_referencia or bajo_referencias):
+        bajo_titulo = i > 0 and re.fullmatch(r"\W*referencias?\W*", lineas[i - 1])
+        if re.search(r"\breferencias?\b", linea) or bajo_titulo:
+            en_referencias = True
+        elif not (en_referencias and re.match(FILA_REFERENCIA, linea)):
+            en_referencias = False
             sin_referencias.append(linea)
     return "\n".join(sin_referencias[:lineas_maximas])
 
 
 def tiene_titulo(patron: str, cabecera: str) -> bool:
-    """El título cuenta si abre una línea o va seguido del número del documento."""
+    """El título cuenta si abre una línea, va seguido del número del documento o es "... electronica"
+    al final de una línea (el OCR pega el recuadro del SII a la derecha de los datos del emisor)."""
     al_inicio = re.search(rf"^\W*(?:{patron})", cabecera, re.MULTILINE)
     con_numero = re.search(rf"(?:{patron})(\s+electronica)?\s*{MARCA_NUMERO}", cabecera)
-    return bool(al_inicio or con_numero)
+    al_final = re.search(rf"(?:{patron})\s+electronica\W*$", cabecera, re.MULTILINE)
+    return bool(al_inicio or con_numero or al_final)
 
 
 def numero_documento(tipo: str, inicio: str) -> str | None:
@@ -78,8 +88,8 @@ def numero_documento(tipo: str, inicio: str) -> str | None:
              or re.search(rf"{titulo}[\s\S]{{0,{DISTANCIA_TITULO_NUMERO}}}?{numero}", inicio))
     if not match:
         return None
-    # Sin los puntos de miles ("178.880") y en mayúsculas, como se imprime ("SE22").
-    return match.group("numero").replace(".", "").upper() or None
+    # Sin los separadores de miles ("178.880") y en mayúsculas, como se imprime ("SE22").
+    return re.sub(r"[.,]", "", match.group("numero")).upper() or None
 
 
 def clasificar(texto: str) -> Resultado:

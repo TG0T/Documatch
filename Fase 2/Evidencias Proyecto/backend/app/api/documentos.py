@@ -1,14 +1,15 @@
+import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app import config
-from app.classifier.clasificador import clasificar, codigo
+from app.classifier.clasificador import clasificar, codigo, normalizar
 from app.classifier.palabras_clave import TIPOS_DOCUMENTO
 from app.db import get_db
 from app.extraccion.mercancias import extraer_items, montos_netos, verificar_valores
@@ -38,6 +39,8 @@ def a_dict(doc: Documento, incluir_texto: bool = True) -> dict:
         "valor_total": doc.valor_total,
         "neto_documento": doc.neto_documento,
         "valores_coinciden": doc.valores_coinciden,
+        "orden_id": doc.orden_id,
+        "dummy": bool(doc.dummy),
         "url_archivo": f"/api/documentos/{doc.id}/archivo",
     }
     if incluir_texto:
@@ -53,8 +56,34 @@ def obtener_o_404(db: Session, documento_id: int) -> Documento:
     return doc
 
 
+# Tipos que se vinculan a una orden de compra (su fila en el dashboard).
+TIPOS_VINCULABLES = {"guia_despacho", "factura"}
+
+# Números de OC más cortos que esto no se buscan en el texto: "46" aparece en cualquier parte.
+LARGO_MINIMO_NUMERO_OC = 4
+
+
+def buscar_orden(db: Session, texto: str) -> Documento | None:
+    """La orden de compra que el documento menciona por su número (en las referencias de una
+    guía o factura: "Orden Compra N° 4511048747")."""
+    texto = normalizar(texto)
+    ordenes = db.scalars(select(Documento).where(Documento.tipo == "orden_compra", Documento.numero.is_not(None))
+                         .order_by(Documento.id.desc()))
+    for orden in ordenes:
+        numero = orden.numero.lower()
+        if len(numero) >= LARGO_MINIMO_NUMERO_OC and re.search(rf"(?<![\w-]){re.escape(numero)}(?![\w-])", texto):
+            return orden
+    return None
+
+
 @router.post("")
-async def analizar_documento(archivo: UploadFile, db: Session = Depends(get_db)):
+async def analizar_documento(archivo: UploadFile, orden_id: int | None = Form(None), db: Session = Depends(get_db)):
+    """Analiza y guarda un documento. Con `orden_id` (subido desde una fila del dashboard) debe ser
+    una guía de despacho o una factura, y queda vinculado a esa orden de compra."""
+    orden = obtener_o_404(db, orden_id) if orden_id is not None else None
+    if orden is not None and orden.tipo != "orden_compra":
+        raise HTTPException(400, "El documento indicado no es una orden de compra")
+
     extension = Path(archivo.filename or "").suffix.lower()
     if extension not in EXTENSIONES_SOPORTADAS:
         raise HTTPException(400, f"Formato no soportado. Usa: {', '.join(sorted(EXTENSIONES_SOPORTADAS))}")
@@ -70,6 +99,11 @@ async def analizar_documento(archivo: UploadFile, db: Session = Depends(get_db))
         raise HTTPException(422, f"No se pudo leer el documento: {e}")
 
     resultado = clasificar(extraccion.texto)
+    if orden is not None and resultado.tipo not in TIPOS_VINCULABLES:
+        nombre = TIPOS_DOCUMENTO.get(resultado.tipo, {}).get("nombre", "un documento desconocido")
+        raise HTTPException(422, f"Se esperaba una guía de despacho o una factura, pero el documento es: {nombre}")
+    if orden is None and resultado.tipo in TIPOS_VINCULABLES:
+        orden = buscar_orden(db, extraccion.texto)
     items = extraer_items(extraccion.paginas)
     con_valores = resultado.tipo in TIPOS_CON_VALORES
     totales = [i.total for i in items if i.total is not None] if con_valores else []
@@ -98,6 +132,7 @@ async def analizar_documento(archivo: UploadFile, db: Session = Depends(get_db))
         valor_total=sum(totales) if totales else None,
         neto_documento=neto,
         valores_coinciden=coinciden,
+        orden_id=orden.id if orden else None,
     )
     try:
         db.add(doc)
@@ -137,5 +172,7 @@ def descargar_archivo(documento_id: int, db: Session = Depends(get_db)):
 def eliminar_documento(documento_id: int, db: Session = Depends(get_db)):
     doc = obtener_o_404(db, documento_id)
     (config.ARCHIVOS_DIR / doc.nombre_guardado).unlink(missing_ok=True)
+    # Las guías y facturas de una OC eliminada quedan sin OC (siguen en el historial)
+    db.execute(update(Documento).where(Documento.orden_id == doc.id).values(orden_id=None))
     db.delete(doc)
     db.commit()
