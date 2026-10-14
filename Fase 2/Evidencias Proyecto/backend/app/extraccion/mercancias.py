@@ -191,10 +191,13 @@ def completar_encabezado(celdas: list[Palabra], segunda: Fila) -> None:
 
 
 def mitad_de_encabezado(fila: Fila, otra: Fila, alto: float) -> bool:
-    """`otra` es parte del mismo encabezado que `fila`: en una foto algo torcida el encabezado
-    queda partido en dos filas casi a la misma altura ("Codigo Cant." / "Descripcion Total")."""
-    solape = min(fila.y1, otra.y1) - max(fila.y0, otra.y0)
-    return (solape > alto / 2
+    """`otra` es parte del mismo encabezado que `fila`, pegada a ella:
+    - en una foto algo torcida el encabezado queda partido en dos filas casi a la misma altura
+      ("Codigo Cant." / "Descripcion Total");
+    - en un PDF las celdas de dos líneas van centradas: "Precio" / "Unit." quedan una arriba y otra
+      abajo de "Código Descripción Cantidad"."""
+    separacion = max(fila.y0, otra.y0) - min(fila.y1, otra.y1)  # negativa si se solapan
+    return (separacion < alto / 2
             and all(a_numero(p.texto) is None for p in otra.palabras)
             and es_encabezado(otra.texto))
 
@@ -264,10 +267,34 @@ def leer_encabezado(filas: list[Fila], i: int, alto: float) -> Tabla | None:
     )
 
 
+def palabras_descripcion(fila: Fila, columna: Columna, alto: float) -> list[Palabra]:
+    """Las palabras que empiezan dentro de la columna de descripción y las que siguen pegadas a
+    ellas: una descripción larga pasa el límite de la columna ("... 900W 11.000 RPM uso"), pero
+    el texto de una columna sin encabezado ("Ver ficha") va separado por un espacio."""
+    palabras: list[Palabra] = []
+    for p in fila.palabras:  # ordenadas de izquierda a derecha
+        dentro = columna.izquierda <= p.cx and p.x0 <= columna.derecha
+        pegada = palabras and p.x0 - palabras[-1].x1 <= alto and a_numero(p.texto) is None
+        if dentro or pegada:
+            palabras.append(p)
+        elif palabras:
+            break
+    return palabras
+
+
+@dataclass
+class ItemLeido:
+    fila: Fila
+    cantidad: float
+    total: float | None
+    partes: list[tuple[float, str]]  # partes de la descripción como (y, texto)
+
+
 def leer_items(filas: list[Fila], tabla: Tabla, alto: float, encabezado: Fila, decimal: str) -> list[Item]:
-    # (fila, cantidad, total, partes de la descripción como (y, texto))
-    con_cantidad: list[tuple[Fila, float, float | None, list[tuple[float, str]]]] = []
-    sueltas: list[tuple[Fila, str]] = []  # filas con descripción pero sin cantidad
+    con_cantidad: list[ItemLeido] = []
+    # Filas sin cantidad: más líneas de la descripción de un ítem y, a veces, su total ("$" en la
+    # primera línea y "1.300.000" en la segunda, cuando el monto no cabe en la celda).
+    sueltas: list[tuple[Fila, str, float | None]] = []
     anterior = encabezado
     for fila in filas:
         if fila.y0 - anterior.y1 > alto * SALTO_MAXIMO or re.match(FIN_TABLA, fila.texto):
@@ -275,34 +302,39 @@ def leer_items(filas: list[Fila], tabla: Tabla, alto: float, encabezado: Fila, d
         anterior = fila
 
         cantidad = tabla.cantidad.numero(fila, decimal)
+        total = tabla.total.numero(fila, decimal) if tabla.total else None
 
         if tabla.descripcion:
-            palabras = [p for p in fila.palabras if tabla.descripcion.contiene(p)]
+            palabras = palabras_descripcion(fila, tabla.descripcion, alto)
         else:
             # Sin columna de descripción: todo lo que tenga letras (la cantidad no tiene).
             palabras = [p for p in fila.palabras if re.search(r"[^\W\d_]", p.texto)]
         texto = " ".join(t for t in (p.texto.strip(BORDES) for p in palabras) if t)
 
         if cantidad is not None:
-            total = tabla.total.numero(fila, decimal) if tabla.total else None
-            con_cantidad.append((fila, cantidad, total, [(fila.cy, texto)] if texto else []))
-        elif texto:
-            sueltas.append((fila, texto))
+            con_cantidad.append(ItemLeido(fila, cantidad, total, [(fila.cy, texto)] if texto else []))
+        elif texto or total is not None:
+            sueltas.append((fila, texto, total))
 
-    # Una fila sin cantidad es parte de la descripción de un ítem que ocupa varias líneas. Va con el
-    # ítem de arriba ("Producto 3" / "- SubProducto 3.a"), salvo que el de abajo esté claramente
-    # más cerca: en celdas de varias líneas la cantidad suele ir centrada, debajo de la primera.
-    for fila, texto in sueltas:
-        arriba = [c for c in con_cantidad if c[0].cy < fila.cy]
-        abajo = [c for c in con_cantidad if c[0].cy > fila.cy]
+    # Una fila sin cantidad va con el ítem de arriba ("Producto 3" / "- SubProducto 3.a"), salvo
+    # que el de abajo esté claramente más cerca: en celdas de varias líneas la cantidad suele ir
+    # centrada, debajo de la primera.
+    for fila, texto, total in sueltas:
+        arriba = [c for c in con_cantidad if c.fila.cy < fila.cy]
+        abajo = [c for c in con_cantidad if c.fila.cy > fila.cy]
         previo = arriba[-1] if arriba else None
         siguiente = abajo[0] if abajo else None
-        if siguiente and (not previo or siguiente[0].cy - fila.cy < (fila.cy - previo[0].cy) / 2):
-            siguiente[3].append((fila.cy, texto))
+        if siguiente and (not previo or siguiente.fila.cy - fila.cy < (fila.cy - previo.fila.cy) / 2):
+            item = siguiente
         elif previo:
-            previo[3].append((fila.cy, texto))
-    return [Item(" ".join(t for _, t in sorted(partes)), cantidad, total)
-            for _, cantidad, total, partes in con_cantidad]
+            item = previo
+        else:
+            continue
+        if texto:
+            item.partes.append((fila.cy, texto))
+        if item.total is None:
+            item.total = total
+    return [Item(" ".join(t for _, t in sorted(i.partes)), i.cantidad, i.total) for i in con_cantidad]
 
 
 def extraer_items(paginas: list[list[Palabra]]) -> list[Item]:

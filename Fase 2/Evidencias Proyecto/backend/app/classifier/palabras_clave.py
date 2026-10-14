@@ -27,8 +27,8 @@ PUNTAJE_MINIMO = 5
 MARCA_NUMERO = r"(n\s?[°º*'’\"”?.:]|nro\b|numero\b|folio\b)"
 
 # El número del documento: "4521", "178.880" (o "12,480" si el OCR lee el punto como coma),
-# "876-329-SE22" (órdenes de Mercado Público).
-NUMERO_DOCUMENTO = r"[a-z0-9]*\d[a-z0-9]*(?:[.,]\d{3})*(?:-[a-z0-9]+)*"
+# "876-329-SE22" (órdenes de Mercado Público), "OC-2026-0845" (con prefijo de letras).
+NUMERO_DOCUMENTO = r"(?:[a-z]+-)?[a-z0-9]*\d[a-z0-9]*(?:[.,]\d{3})*(?:-[a-z0-9]+)*"
 
 # El SII imprime "Nº" con la "º" chica y subrayada, y el OCR la lee como un 2 pegado al número:
 # "Nº46" queda "n246". Solo se aplica a "n2" pegado al número, sin espacio.

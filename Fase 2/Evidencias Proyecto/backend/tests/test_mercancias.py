@@ -255,3 +255,24 @@ def test_encabezado_partido_en_dos_filas_por_foto_torcida():
         p.y0 += 6
         p.y1 += 6
     assert resumen([palabras]) == [("TONER NEGRO", 1)]
+
+
+def test_pdf_con_encabezado_en_tres_lineas_y_total_en_la_segunda_linea():
+    # En un PDF las celdas de dos líneas del encabezado van centradas ("Precio" arriba y "Unit."
+    # abajo de "Cantidad"), y cuando el monto no cabe queda "$" en la primera línea del ítem y el
+    # número en la segunda: no debe leerse como un ítem con cantidad 1.300.000.
+    palabras = pagina(
+        [("Precio", 650), ("Valor", 850)],
+        [("Código", 0), ("Descripción", 100), ("Cantidad", 500)],
+        [("Unit.", 650), ("Total", 850)],
+        [("A-1", 0), ("Taladro percutor 850W", 100), ("20", 520), ("65.000", 650), ("$", 850)],
+        [("c/maletín", 100), ("1.300.000", 830)],
+        # La descripción pasa el límite de su columna: "RPM uso" va pegado al resto
+        [("B-2", 0), ("Esmeril angular 900W 11.000 RPM uso", 100), ("15", 520), ("48.000", 650), ("720.000", 850)],
+        interlineado=25,
+    )
+    items = extraer_items([palabras])
+    assert [(i.descripcion, i.cantidad, i.total) for i in items] == [
+        ("Taladro percutor 850W c/maletín", 20, 1300000),
+        ("Esmeril angular 900W 11.000 RPM uso", 15, 720000),
+    ]

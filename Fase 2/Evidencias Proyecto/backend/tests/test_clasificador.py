@@ -196,3 +196,11 @@ def test_factura_con_tabla_de_referencias():
     assert resultado.numero == "12480"
     assert "[título en encabezado]" not in resultado.coincidencias["guia_despacho"]
     assert "[título en encabezado]" not in resultado.coincidencias["orden_compra"]
+
+
+def test_numero_con_prefijo_de_letras():
+    texto = "R.U.T.: 96.845.120-K\nORDEN DE COMPRA\nN° OC-2026-0845\nProveedor: Ferretera Andina\nCentro de costo: CC-409"
+    resultado = clasificar(texto)
+    assert resultado.numero == "OC-2026-0845"
+    # El prefijo no se repite en el código
+    assert codigo(resultado.tipo, resultado.numero) == "OC-2026-0845"

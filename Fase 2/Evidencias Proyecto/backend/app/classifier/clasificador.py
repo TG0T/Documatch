@@ -36,7 +36,10 @@ def codigo(tipo: str, numero: str | None) -> str | None:
     """Código del documento: prefijo del tipo y número ("OC-123", "G-123", "F-123")."""
     if tipo not in TIPOS_DOCUMENTO or not numero:
         return None
-    return f"{TIPOS_DOCUMENTO[tipo]['prefijo']}-{numero}"
+    prefijo = TIPOS_DOCUMENTO[tipo]["prefijo"]
+    if numero.startswith(f"{prefijo}-"):  # el número ya trae el prefijo: "OC-2026-0845"
+        return numero
+    return f"{prefijo}-{numero}"
 
 
 def normalizar(texto: str) -> str:
