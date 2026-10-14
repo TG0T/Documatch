@@ -9,12 +9,14 @@ PENDIENTE = "pendiente"  # falta la guía o la factura, sin diferencias hasta ah
 OK = "ok"  # todo coincide
 PARCIAL = "parcial"  # se despachó menos de lo pedido (y se facturó lo despachado)
 DISCREPANCIA = "discrepancia"  # cualquier otra diferencia
+FINALIZADA = "finalizada"  # despacho parcial que se dio por terminado (acuerdo con el proveedor)
 
 
 @dataclass
 class Estado:
     estado: str
     detalle: str
+    puede_finalizar: bool = False  # despacho parcial ya facturado: se puede dar por terminado
 
 
 def formato(n: float) -> str:
@@ -23,9 +25,24 @@ def formato(n: float) -> str:
     return texto.replace(",", "_").replace(".", ",").replace("_", ".")
 
 
-def comparar(pedido: float | None, despachos: list[float | None], facturas: list[float | None]) -> Estado:
+def comparar(pedido: float | None, despachos: list[float | None], facturas: list[float | None],
+             finalizada: bool = False, motivo: str | None = None) -> Estado:
     """`pedido`: cantidad total de la OC. `despachos` y `facturas`: cantidad total de cada guía
-    y de cada factura de la OC (None si el OCR no encontró la tabla de ítems)."""
+    y de cada factura de la OC (None si el OCR no encontró la tabla de ítems).
+
+    Una OC con despacho parcial y facturada por lo recibido se puede finalizar (`finalizada`): se
+    da por terminada sin esperar el resto. Si después llega otra guía o factura que cambia las
+    cantidades, vuelve a mostrar el estado que corresponda."""
+    estado = comparar_cantidades(pedido, despachos, facturas)
+    if estado.estado == PARCIAL and facturas:
+        if finalizada:
+            detalle = f"Finalizada con despacho parcial: {estado.detalle.removeprefix('Despachado ')}"
+            return Estado(FINALIZADA, f"{detalle} · {motivo}" if motivo else detalle)
+        estado.puede_finalizar = True
+    return estado
+
+
+def comparar_cantidades(pedido: float | None, despachos: list[float | None], facturas: list[float | None]) -> Estado:
     if pedido is None:
         return Estado(DISCREPANCIA, "No se pudo leer la cantidad de la orden de compra")
     if None in despachos:

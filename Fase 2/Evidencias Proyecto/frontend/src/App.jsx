@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import './App.css'
+import { confirmar } from './alertas.js'
 
 const NOMBRES = {
   factura: 'Factura',
@@ -89,7 +90,13 @@ export default function App() {
   }
 
   async function eliminar(id) {
-    if (!confirm('¿Eliminar este documento?')) return
+    const ok = await confirmar({
+      titulo: '¿Eliminar este documento?',
+      texto: 'Se borran el registro y el archivo original.',
+      boton: 'Eliminar',
+      peligro: true,
+    })
+    if (!ok) return
     const res = await fetch(`/api/documentos/${id}`, { method: 'DELETE' })
     if (res.ok) {
       if (resultado?.id === id) setResultado(null)

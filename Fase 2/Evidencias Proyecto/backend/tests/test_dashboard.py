@@ -50,3 +50,49 @@ def test_guia_que_menciona_la_oc_se_vincula_sola():
         # Que el número aparezca dentro de otro más largo no cuenta
         assert buscar_orden(db, f"Folio 9{numero}") is None
     client.delete("/api/dummies")
+
+
+def test_cantidades_y_avance_de_cada_fila():
+    for escenario in ("ok", "parcial", "pendiente"):
+        client.post("/api/dummies", params={"escenario": escenario})
+    filas = {f["estado"]: f for f in client.get("/api/dashboard").json()}
+
+    ok = filas["ok"]
+    assert ok["pedido"] == ok["despachado"] == ok["facturado"]
+    assert ok["avance"] == 100
+    assert ok["orden"]["items"] and ok["guias"][0]["items"]
+
+    parcial = filas["parcial"]
+    assert parcial["despachado"] < parcial["pedido"]
+    assert parcial["avance"] == round(100 * parcial["despachado"] / parcial["pedido"])
+
+    pendiente = filas["pendiente"]
+    assert pendiente["despachado"] is None and pendiente["facturado"] is None
+    assert pendiente["avance"] is None
+    client.delete("/api/dummies")
+
+
+def test_finalizar_y_reabrir_un_despacho_parcial():
+    client.post("/api/dummies", params={"escenario": "parcial"})
+    client.post("/api/dummies", params={"escenario": "ok"})
+    filas = {f["estado"]: f for f in client.get("/api/dashboard").json()}
+    parcial, ok = filas["parcial"], filas["ok"]
+    assert parcial["puede_finalizar"] and not ok["puede_finalizar"]
+
+    # Una OC que no es parcial no se puede finalizar
+    assert client.post(f"/api/ordenes/{ok['orden']['id']}/finalizar").status_code == 409
+
+    id_ = parcial["orden"]["id"]
+    r = client.post(f"/api/ordenes/{id_}/finalizar", json={"motivo": "Acuerdo con proveedor"})
+    assert r.status_code == 204
+    fila = next(f for f in client.get("/api/dashboard").json() if f["orden"]["id"] == id_)
+    assert fila["estado"] == "finalizada" and fila["finalizada"]
+    assert fila["detalle"].endswith("Acuerdo con proveedor")
+
+    assert client.delete(f"/api/ordenes/{id_}/finalizar").status_code == 204
+    fila = next(f for f in client.get("/api/dashboard").json() if f["orden"]["id"] == id_)
+    assert fila["estado"] == "parcial" and not fila["finalizada"]
+
+    # Sin motivo también se puede
+    assert client.post(f"/api/ordenes/{id_}/finalizar").status_code == 204
+    client.delete("/api/dummies")

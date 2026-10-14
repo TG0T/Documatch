@@ -1,4 +1,4 @@
-from app.seguimiento import DISCREPANCIA, OK, PARCIAL, PENDIENTE, comparar
+from app.seguimiento import DISCREPANCIA, FINALIZADA, OK, PARCIAL, PENDIENTE, comparar
 
 
 def test_todo_coincide():
@@ -51,3 +51,22 @@ def test_cantidad_ilegible():
 
 def test_formato_chileno():
     assert comparar(1500, [2.5], []).detalle == "Despachado 2,5 de 1.500"
+
+
+def test_parcial_facturado_se_puede_finalizar():
+    assert comparar(200, [116], [116]).puede_finalizar
+    # Sin factura, o con una diferencia de cobro, no
+    assert not comparar(200, [116], []).puede_finalizar
+    assert not comparar(200, [116], [120]).puede_finalizar
+    assert not comparar(200, [200], [200]).puede_finalizar
+
+
+def test_orden_finalizada():
+    estado = comparar(200, [116], [116], finalizada=True, motivo="Acuerdo con proveedor")
+    assert estado.estado == FINALIZADA
+    assert estado.detalle == "Finalizada con despacho parcial: 116 de 200 · Acuerdo con proveedor"
+
+
+def test_finalizada_vuelve_a_su_estado_si_cambian_las_cantidades():
+    # Llegó otra factura después de finalizar: la diferencia de cobro se muestra igual.
+    assert comparar(200, [116], [116, 10], finalizada=True).estado == DISCREPANCIA

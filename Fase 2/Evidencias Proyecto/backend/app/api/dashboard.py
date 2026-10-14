@@ -2,14 +2,14 @@
 import random
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.classifier.clasificador import codigo
 from app.db import get_db
 from app.models import Documento
-from app.seguimiento import comparar
+from app.seguimiento import Estado, comparar
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
@@ -22,31 +22,85 @@ def resumen(doc: Documento) -> dict:
         "archivo": doc.nombre_original,
         "cantidad_total": doc.cantidad_total,
         "valor_total": doc.valor_total,
+        "items": doc.items or [],  # tal como los leyó el OCR (sin emparejar entre documentos)
         "dummy": bool(doc.dummy),
         "url_archivo": None if doc.dummy else f"/api/documentos/{doc.id}/archivo",
     }
+
+
+def suma(cantidades: list[float | None]) -> float | None:
+    """Total de varias guías o facturas; None si no hay ninguna o alguna no se pudo leer."""
+    return sum(cantidades) if cantidades and None not in cantidades else None
+
+
+def vinculados_a(db: Session, ordenes: list[Documento]) -> list[Documento]:
+    return db.scalars(select(Documento).where(Documento.orden_id.in_([o.id for o in ordenes]))
+                      .order_by(Documento.id)).all()
+
+
+def estado_de(orden: Documento, guias: list[Documento], facturas: list[Documento]) -> Estado:
+    return comparar(orden.cantidad_total, [g.cantidad_total for g in guias], [f.cantidad_total for f in facturas],
+                    finalizada=bool(orden.finalizada), motivo=orden.motivo_cierre)
 
 
 @router.get("/dashboard")
 def dashboard(db: Session = Depends(get_db)):
     ordenes = db.scalars(select(Documento).where(Documento.tipo == "orden_compra")
                          .order_by(Documento.fecha_creacion.desc(), Documento.id.desc())).all()
-    vinculados = db.scalars(select(Documento).where(Documento.orden_id.in_([o.id for o in ordenes]))
-                            .order_by(Documento.id)).all()
+    vinculados = vinculados_a(db, ordenes)
     filas = []
     for orden in ordenes:
         guias = [d for d in vinculados if d.orden_id == orden.id and d.tipo == "guia_despacho"]
         facturas = [d for d in vinculados if d.orden_id == orden.id and d.tipo == "factura"]
-        estado = comparar(orden.cantidad_total,
-                          [g.cantidad_total for g in guias], [f.cantidad_total for f in facturas])
+        estado = estado_de(orden, guias, facturas)
+        pedido, despachado = orden.cantidad_total, suma([g.cantidad_total for g in guias])
         filas.append({
             "orden": resumen(orden),
             "guias": [resumen(g) for g in guias],
             "facturas": [resumen(f) for f in facturas],
             "estado": estado.estado,
             "detalle": estado.detalle,
+            "puede_finalizar": estado.puede_finalizar,
+            "finalizada": bool(orden.finalizada),
+            "pedido": pedido,
+            "despachado": despachado,
+            "facturado": suma([f.cantidad_total for f in facturas]),
+            # Porcentaje de lo pedido que ya se despachó (tope 100); None si no hay con qué calcularlo
+            "avance": min(round(100 * despachado / pedido), 100) if pedido and despachado is not None else None,
         })
     return filas
+
+
+def orden_o_404(db: Session, orden_id: int) -> Documento:
+    orden = db.get(Documento, orden_id)
+    if orden is None or orden.tipo != "orden_compra":
+        raise HTTPException(404, "Orden de compra no encontrada")
+    return orden
+
+
+@router.post("/ordenes/{orden_id}/finalizar", status_code=204)
+def finalizar_orden(orden_id: int, motivo: str | None = Body(None, embed=True, max_length=255),
+                    db: Session = Depends(get_db)):
+    """Da por terminada una OC con despacho parcial (por ejemplo, por acuerdo con el proveedor).
+    Solo si lo despachado ya se facturó completo: no sirve para ocultar una diferencia de cobro."""
+    orden = orden_o_404(db, orden_id)
+    vinculados = vinculados_a(db, [orden])
+    estado = comparar(orden.cantidad_total,
+                      [d.cantidad_total for d in vinculados if d.tipo == "guia_despacho"],
+                      [d.cantidad_total for d in vinculados if d.tipo == "factura"])
+    if not estado.puede_finalizar:
+        raise HTTPException(409, "Solo se puede finalizar una orden con despacho parcial y facturada por lo recibido")
+    orden.finalizada = True
+    orden.motivo_cierre = (motivo or "").strip() or None
+    db.commit()
+
+
+@router.delete("/ordenes/{orden_id}/finalizar", status_code=204)
+def reabrir_orden(orden_id: int, db: Session = Depends(get_db)):
+    orden = orden_o_404(db, orden_id)
+    orden.finalizada = False
+    orden.motivo_cierre = None
+    db.commit()
 
 
 # --- Dummies: documentos de ejemplo para llenar el dashboard sin subir archivos ---

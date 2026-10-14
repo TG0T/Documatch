@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import App from './App.jsx'
+import { confirmar, mostrarError, pedirTexto } from './alertas.js'
 
 /* ══════════════════════════════════════════════════════════════
    CONFIGURACIÓN · Escenarios y estados
@@ -17,6 +18,7 @@ const ESTADOS = {
   parcial:      { texto: 'Despacho parcial', tone: 'amber',   icon: 'clock' },
   discrepancia: { texto: 'Discrepancia',     tone: 'rose',    icon: 'alert' },
   pendiente:    { texto: 'Pendiente',        tone: 'sky',     icon: 'truck' },
+  finalizada:   { texto: 'Finalizada',       tone: 'slate',   icon: 'check' },
 }
 
 const TONES = {
@@ -179,9 +181,10 @@ function KpiCard({ titulo, valor, sub, tono, icono, activo, onClick }) {
 function ModalCarga({ abierto, onClose, onSubir, contexto }) {
   const [archivos, setArchivos] = useState([])
   const [dragging, setDragging] = useState(false)
+  const [subiendo, setSubiendo] = useState(0) // n° del archivo que se está analizando (0: ninguno)
 
   useEffect(() => {
-    if (!abierto) { setArchivos([]); setDragging(false) }
+    if (!abierto) { setArchivos([]); setDragging(false); setSubiendo(0) }
   }, [abierto])
 
   if (!abierto) return null
@@ -191,16 +194,23 @@ function ModalCarga({ abierto, onClose, onSubir, contexto }) {
     if (arr.length) setArchivos((prev) => [...prev, ...arr])
   }
 
+  // Mientras se analiza no se puede cerrar ni volver a enviar (se subirían duplicados)
+  const cerrar = () => { if (!subiendo) onClose() }
+
   const submit = async () => {
-    for (const f of archivos) {
-      await onSubir(f)
+    if (subiendo) return
+    setSubiendo(1)
+    try {
+      await onSubir(archivos, setSubiendo)
+    } finally {
+      setSubiendo(0)
     }
     onClose()
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={cerrar} />
       <div className="relative flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5">
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-5 py-4">
           <div>
@@ -209,7 +219,7 @@ function ModalCarga({ abierto, onClose, onSubir, contexto }) {
               {contexto ? <>Se vinculará a <b>{contexto}</b></> : 'Sube una OC, guía de despacho o factura'}
             </p>
           </div>
-          <button onClick={onClose}
+          <button onClick={cerrar} disabled={subiendo > 0}
             className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
             <Icon name="x" />
           </button>
@@ -219,8 +229,8 @@ function ModalCarga({ abierto, onClose, onSubir, contexto }) {
           <div
             onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
             onDragLeave={() => setDragging(false)}
-            onDrop={(e) => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files) }}
-            onClick={() => document.getElementById('modal-file-input')?.click()}
+            onDrop={(e) => { e.preventDefault(); setDragging(false); if (!subiendo) addFiles(e.dataTransfer.files) }}
+            onClick={() => { if (!subiendo) document.getElementById('modal-file-input')?.click() }}
             className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition ${dragging ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-gradient-to-br from-slate-50 to-white hover:border-indigo-300 hover:from-indigo-50/40'}`}>
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-indigo-500 shadow-sm ring-1 ring-slate-200">
               <Icon name="clip" className="h-5 w-5" />
@@ -246,8 +256,10 @@ function ModalCarga({ abierto, onClose, onSubir, contexto }) {
                 <li key={i} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs ring-1 ring-inset ring-slate-200">
                   <Icon name="doc" className="h-3.5 w-3.5 text-slate-400" />
                   <span className="flex-1 truncate text-slate-700">{f.name}</span>
-                  <button onClick={() => setArchivos((a) => a.filter((_, j) => j !== i))}
-                    className="text-slate-400 transition hover:text-rose-600">
+                  {subiendo === i + 1 && <span className="text-indigo-600">Analizando…</span>}
+                  {subiendo > i + 1 && <Icon name="check" className="h-3.5 w-3.5 text-emerald-600" />}
+                  <button onClick={() => setArchivos((a) => a.filter((_, j) => j !== i))} disabled={subiendo > 0}
+                    className="text-slate-400 disabled:invisible transition hover:text-rose-600">
                     <Icon name="x" className="h-3.5 w-3.5" />
                   </button>
                 </li>
@@ -257,14 +269,16 @@ function ModalCarga({ abierto, onClose, onSubir, contexto }) {
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3.5">
-          <button onClick={onClose}
-            className="rounded-lg bg-white px-3.5 py-2 text-sm font-medium text-slate-700 ring-1 ring-inset ring-slate-200 transition hover:bg-slate-50">
+          <button onClick={cerrar} disabled={subiendo > 0}
+            className="rounded-lg bg-white disabled:opacity-40 px-3.5 py-2 text-sm font-medium text-slate-700 ring-1 ring-inset ring-slate-200 transition hover:bg-slate-50">
             Cancelar
           </button>
-          <button onClick={submit} disabled={archivos.length === 0}
+          <button onClick={submit} disabled={archivos.length === 0 || subiendo > 0}
             className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
-            <Icon name="check" />
-            Adjuntar {archivos.length > 1 ? `(${archivos.length})` : ''}
+            <Icon name={subiendo ? 'clock' : 'check'} />
+            {subiendo
+              ? `Analizando ${subiendo} de ${archivos.length}…`
+              : `Adjuntar ${archivos.length > 1 ? `(${archivos.length})` : ''}`}
           </button>
         </div>
       </div>
@@ -276,15 +290,52 @@ function ModalCarga({ abierto, onClose, onSubir, contexto }) {
    FILA EXPANDIBLE (ACORDEÓN)
    ══════════════════════════════════════════════════════════════ */
 
-function FilaOC({ fila, onEliminar, onSubirDoc }) {
+// Una columna del desglose: los ítems de la OC, de sus guías o de sus facturas
+function ColumnaItems({ titulo, total, docs, tono }) {
+  const t = TONES[tono]
+  return (
+    <div className="p-4">
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <h5 className={`text-[11px] font-semibold uppercase tracking-wider ${t.text}`}>{titulo}</h5>
+        <span className="text-xs tabular-nums text-slate-500">
+          Total: <b className="text-slate-800">{formatoCantidad(total)}</b>
+        </span>
+      </div>
+      {docs.length === 0 ? (
+        <p className="text-xs italic text-slate-400">Sin documentos</p>
+      ) : (
+        <div className="space-y-3">
+          {docs.map((doc) => (
+            <div key={doc.id}>
+              <DocumentoChip doc={doc} tono={tono} />
+              {doc.items.length === 0 ? (
+                <p className="mt-1.5 text-[11px] italic text-slate-400">No se encontró la tabla de ítems</p>
+              ) : (
+                <ul className="mt-1.5 divide-y divide-slate-100 text-xs">
+                  {doc.items.map((it, i) => (
+                    <li key={i} className="flex items-start justify-between gap-3 py-1">
+                      <span className="text-slate-600">{it.descripcion || '—'}</span>
+                      <span className="shrink-0 tabular-nums font-medium text-slate-800">{formatoCantidad(it.cantidad)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FilaOC({ fila, onEliminar, onSubirDoc, onFinalizar, onReabrir }) {
   const [abierta, setAbierta] = useState(false)
   const id = fila.orden.id
   const codigo = fila.orden.codigo ?? '(sin número)'
   const estado = ESTADOS[fila.estado] ?? ESTADOS.pendiente
 
-  const items = fila.items ?? fila.orden.items ?? null
-
-  const progreso = fila.estado === 'ok' ? 100 : fila.estado === 'parcial' ? 55 : fila.estado === 'discrepancia' ? 70 : 0
+  // Porcentaje de lo pedido que ya se despachó (null: sin guías o sin cantidades legibles)
+  const progreso = fila.avance
 
   return (
     <>
@@ -324,18 +375,34 @@ function FilaOC({ fila, onEliminar, onSubirDoc }) {
           </div>
         </td>
         <td className="px-3 py-3 align-top">
-          <div className="flex items-center gap-2 min-w-[140px]">
+          <div className="flex items-center gap-2 min-w-[140px]"
+               title={`Despachado ${formatoCantidad(fila.despachado)} de ${formatoCantidad(fila.pedido)}`}>
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-              <div className={`h-full bg-gradient-to-r ${TONES[estado.tone].grad} transition-all`} style={{ width: `${progreso}%` }} />
+              <div className={`h-full bg-gradient-to-r ${TONES[estado.tone].grad} transition-all`} style={{ width: `${progreso ?? 0}%` }} />
             </div>
-            <span className="w-9 text-right text-xs tabular-nums text-slate-500">{progreso}%</span>
+            <span className="w-9 text-right text-xs tabular-nums text-slate-500">{progreso == null ? '—' : `${progreso}%`}</span>
           </div>
         </td>
         <td className="px-3 py-3 align-top text-right text-xs text-slate-500">
           {fila.detalle || '—'}
         </td>
-        <td className="px-4 py-3 align-top text-right" onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => onEliminar(id)}
+        <td className="px-4 py-3 align-top text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+          {/* Opcional: cerrar un despacho parcial ya facturado (acuerdo con el proveedor) */}
+          {fila.puede_finalizar && (
+            <button onClick={() => onFinalizar(id, codigo)}
+              title="Dar por terminada la orden con lo recibido"
+              className="mr-1 inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-inset ring-slate-200 transition hover:bg-slate-900 hover:text-white">
+              <Icon name="check" className="h-3.5 w-3.5" /> Finalizar
+            </button>
+          )}
+          {fila.finalizada && (
+            <button onClick={() => onReabrir(id, codigo)}
+              title="Volver a dejar la orden abierta"
+              className="mr-1 inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-medium text-slate-500 ring-1 ring-inset ring-slate-200 transition hover:bg-slate-50 hover:text-slate-800">
+              <Icon name="refresh" className="h-3.5 w-3.5" /> Reabrir
+            </button>
+          )}
+          <button onClick={() => onEliminar(id, codigo)}
             title="Eliminar orden"
             className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600">
             <Icon name="trash" />
@@ -351,69 +418,14 @@ function FilaOC({ fila, onEliminar, onSubirDoc }) {
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Desglose de ítems · {codigo}
                 </h4>
-                <span className="text-[11px] text-slate-400">OC vs recibido vs facturado</span>
+                <span className="text-[11px] text-slate-400">Ítems tal como los leyó el OCR en cada documento</span>
               </div>
 
-              {items && items.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead className="text-[10px] uppercase tracking-wider text-slate-400">
-                      <tr className="border-b border-slate-100 bg-slate-50/50">
-                        <th className="px-3 py-2 text-left font-medium">SKU / Material</th>
-                        <th className="px-3 py-2 text-right font-medium">Cant. OC</th>
-                        <th className="px-3 py-2 text-right font-medium">Recibida</th>
-                        <th className="px-3 py-2 text-right font-medium">Facturada</th>
-                        <th className="px-3 py-2 text-right font-medium">P. unit. OC</th>
-                        <th className="px-3 py-2 text-right font-medium">P. unit. Fact.</th>
-                        <th className="px-3 py-2 text-center font-medium">Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {items.map((it, i) => {
-                        const okRec = (it.recibida ?? 0) >= (it.pedida ?? 0)
-                        const okFac = (it.facturada ?? 0) <= (it.recibida ?? 0)
-                        const okPu = it.puOC === it.puFact
-                        const itemOk = okRec && okFac && okPu
-                        const tt = TONES[itemOk ? 'emerald' : 'rose']
-                        return (
-                          <tr key={i} className="transition hover:bg-indigo-50/40">
-                            <td className="px-3 py-2">
-                              <div className="font-medium text-slate-800">{it.sku ?? '—'}</div>
-                              <div className="text-[11px] text-slate-500">{it.descripcion ?? ''}</div>
-                            </td>
-                            <td className="px-3 py-2 text-right tabular-nums text-slate-700">{formatoCantidad(it.pedida)}</td>
-                            <td className={`px-3 py-2 text-right tabular-nums ${!okRec ? 'font-semibold text-amber-600' : 'text-slate-700'}`}>
-                              {formatoCantidad(it.recibida)}
-                            </td>
-                            <td className={`px-3 py-2 text-right tabular-nums ${!okFac ? 'font-semibold text-rose-600' : 'text-slate-700'}`}>
-                              {formatoCantidad(it.facturada)}
-                            </td>
-                            <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                              {it.puOC != null ? `$${formatoCantidad(it.puOC)}` : '—'}
-                            </td>
-                            <td className={`px-3 py-2 text-right tabular-nums ${!okPu ? 'font-semibold text-rose-600' : 'text-slate-700'}`}>
-                              {it.puFact != null ? `$${formatoCantidad(it.puFact)}` : '—'}
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${tt.bg} ${tt.text} ${tt.ring}`}>
-                                {itemOk ? 'OK' : 'Discrepancia'}
-                              </span>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="px-4 py-8 text-center">
-                  <Icon name="box" className="mx-auto h-6 w-6 text-slate-300" />
-                  <p className="mt-2 text-xs text-slate-500">Aún no hay desglose de ítems para esta orden.</p>
-                  <p className="mt-0.5 text-[11px] text-slate-400">
-                    El backend debe exponer <code className="rounded bg-slate-100 px-1 py-0.5 font-mono">fila.items</code> con el detalle por material.
-                  </p>
-                </div>
-              )}
+              <div className="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-3 md:divide-x md:divide-y-0">
+                <ColumnaItems titulo="Pedido (OC)" total={fila.pedido} docs={[fila.orden]} tono="slate" />
+                <ColumnaItems titulo="Recibido (guías)" total={fila.despachado} docs={fila.guias} tono="sky" />
+                <ColumnaItems titulo="Facturado" total={fila.facturado} docs={fila.facturas} tono="violet" />
+              </div>
             </div>
           </td>
         </tr>
@@ -429,29 +441,21 @@ function FilaOC({ fila, onEliminar, onSubirDoc }) {
 function Tablero({ filas, recargar, mensaje, setMensaje }) {
   const [q, setQ] = useState('')
   const [tab, setTab] = useState('todos')
-  const [prov, setProv] = useState('todas')
   const [modal, setModal] = useState({ open: false, ordenId: null, contexto: '' })
-
-  const proveedores = useMemo(
-    () => Array.from(new Set(filas.map((f) => f.orden?.proveedor).filter(Boolean))).sort(),
-    [filas]
-  )
 
   const filtradas = useMemo(() => {
     const term = q.trim().toLowerCase()
     return filas.filter((f) => {
       if (tab !== 'todos' && f.estado !== tab) return false
-      if (prov !== 'todas' && f.orden?.proveedor !== prov) return false
       if (!term) return true
       const hay = [
         f.orden?.codigo,
-        f.orden?.proveedor,
         ...(f.guias ?? []).map((g) => g.codigo),
         ...(f.facturas ?? []).map((x) => x.codigo),
       ].filter(Boolean).join(' ').toLowerCase()
       return hay.includes(term)
     })
-  }, [filas, q, tab, prov])
+  }, [filas, q, tab])
 
   const kpis = useMemo(() => ({
     total:        filas.length,
@@ -459,9 +463,10 @@ function Tablero({ filas, recargar, mensaje, setMensaje }) {
     parcial:      filas.filter((f) => f.estado === 'parcial').length,
     discrepancia: filas.filter((f) => f.estado === 'discrepancia').length,
     pendiente:    filas.filter((f) => f.estado === 'pendiente').length,
+    finalizada:   filas.filter((f) => f.estado === 'finalizada').length,
   }), [filas])
 
-  const counts = { todos: filas.length, ok: kpis.ok, parcial: kpis.parcial, discrepancia: kpis.discrepancia, pendiente: kpis.pendiente }
+  const counts = { todos: filas.length, ok: kpis.ok, parcial: kpis.parcial, discrepancia: kpis.discrepancia, pendiente: kpis.pendiente, finalizada: kpis.finalizada }
 
   const TABS = [
     ['todos', 'Todos'],
@@ -469,33 +474,77 @@ function Tablero({ filas, recargar, mensaje, setMensaje }) {
     ['parcial', 'Parciales'],
     ['discrepancia', 'Con discrepancias'],
     ['ok', 'Conciliados'],
+    ['finalizada', 'Finalizadas'],
   ]
 
+  // Sube un archivo y devuelve el mensaje con el resultado
   async function cargar(archivo, ordenId) {
-    setMensaje('')
     try {
       const doc = await subir(archivo, ordenId)
-      if (doc.tipo === 'orden_compra')
-        setMensaje(`✓ Se agregó la OC ${doc.codigo ?? '(sin número)'}.`)
-      else if (doc.orden_id)
-        setMensaje(`✓ ${doc.nombre} ${doc.codigo ?? ''} agregada.`)
-      else if (doc.tipo === 'desconocido')
-        setMensaje('⚠ No se reconoció el tipo de documento. Quedó en el historial del clasificador.')
-      else
-        setMensaje(`⚠ ${doc.nombre} ${doc.codigo ?? ''}: no menciona ninguna OC del dashboard.`)
-      recargar()
+      if (doc.tipo === 'orden_compra') return `✓ Se agregó la OC ${doc.codigo ?? '(sin número)'}.`
+      if (doc.orden_id) return `✓ ${doc.nombre} ${doc.codigo ?? ''} agregada.`
+      if (doc.tipo === 'desconocido') return '⚠ No se reconoció el tipo de documento. Quedó en el historial del clasificador.'
+      return `⚠ ${doc.nombre} ${doc.codigo ?? ''}: no menciona ninguna OC del dashboard.`
     } catch (err) {
-      setMensaje(`Error: ${err.message}`)
+      return `✗ Error: ${err.message}`
     }
   }
 
-  async function eliminar(id) {
-    if (!confirm('¿Eliminar esta orden de compra?')) return
+  // Sube los archivos de a uno (el OCR es lento) y muestra el resultado de todos juntos
+  async function cargarVarios(archivos, ordenId, alAvanzar) {
+    setMensaje('')
+    const mensajes = []
+    for (const [i, archivo] of archivos.entries()) {
+      alAvanzar(i + 1)
+      const mensaje = await cargar(archivo, ordenId)
+      mensajes.push(archivos.length > 1 ? `${archivo.name}: ${mensaje}` : mensaje)
+    }
+    setMensaje(mensajes.join('\n'))
+    recargar()
+  }
+
+  async function finalizar(id, codigo) {
+    const motivo = await pedirTexto({
+      titulo: `¿Finalizar ${codigo}?`,
+      texto: 'La orden se dará por terminada con lo recibido y facturado hasta ahora.',
+      etiqueta: 'Motivo (opcional)',
+      valor: 'Acuerdo con proveedor',
+      boton: 'Finalizar',
+    })
+    if (motivo === null) return
+    const res = await fetch(`/api/ordenes/${id}/finalizar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ motivo }),
+    })
+    if (!res.ok) await mostrarError((await res.json()).detail ?? 'No se pudo finalizar la orden')
+    recargar()
+  }
+
+  async function reabrir(id, codigo) {
+    const ok = await confirmar({
+      titulo: `¿Reabrir ${codigo}?`,
+      texto: 'Volverá a quedar como despacho parcial, esperando más guías o facturas.',
+      boton: 'Reabrir',
+    })
+    if (!ok) return
+    await fetch(`/api/ordenes/${id}/finalizar`, { method: 'DELETE' })
+    recargar()
+  }
+
+  async function eliminar(id, codigo) {
+    const ok = await confirmar({
+      titulo: `¿Eliminar ${codigo}?`,
+      texto: 'Se borra la orden de compra. Sus guías y facturas quedan en el historial del clasificador.',
+      boton: 'Eliminar',
+      peligro: true,
+    })
+    if (!ok) return
     await fetch(`/api/documentos/${id}`, { method: 'DELETE' })
     recargar()
   }
 
-  const limpiar = () => { setQ(''); setTab('todos'); setProv('todas') }
+  const limpiar = () => { setQ(''); setTab('todos') }
 
   return (
     <div className="space-y-6">
@@ -524,7 +573,7 @@ function Tablero({ filas, recargar, mensaje, setMensaje }) {
       {/* Mensaje */}
       {mensaje && (
         <div className="flex items-start gap-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-white px-4 py-3 text-sm text-slate-700 shadow-sm">
-          <span className="flex-1">{mensaje}</span>
+          <span className="flex-1 whitespace-pre-line">{mensaje}</span>
           <button onClick={() => setMensaje('')} className="text-slate-400 transition hover:text-slate-700">
             <Icon name="x" />
           </button>
@@ -532,12 +581,13 @@ function Tablero({ filas, recargar, mensaje, setMensaje }) {
       )}
 
       {/* KPIs */}
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        <KpiCard titulo="OC activas"          valor={kpis.total}        sub="En proceso de conciliación" tono="slate"   icono="box"   activo={tab==='todos'}         onClick={() => setTab('todos')} />
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <KpiCard titulo="Órdenes de compra"   valor={kpis.total}        sub="Total en el dashboard" tono="slate"   icono="box"   activo={tab==='todos'}         onClick={() => setTab('todos')} />
         <KpiCard titulo="Conciliadas"         valor={kpis.ok}           sub="Match completo"             tono="emerald" icono="check" activo={tab==='ok'}            onClick={() => setTab('ok')} />
         <KpiCard titulo="Entregas parciales"  valor={kpis.parcial}      sub="Despacho incompleto"        tono="amber"   icono="clock" activo={tab==='parcial'}       onClick={() => setTab('parcial')} />
         <KpiCard titulo="Discrepancias"       valor={kpis.discrepancia} sub="Revisar precio/cantidad"    tono="rose"    icono="alert" activo={tab==='discrepancia'} onClick={() => setTab('discrepancia')} />
         <KpiCard titulo="Pendientes"          valor={kpis.pendiente}    sub="Sin guía asociada"          tono="sky"     icono="truck" activo={tab==='pendiente'}     onClick={() => setTab('pendiente')} />
+        <KpiCard titulo="Finalizadas"         valor={kpis.finalizada}   sub="Cerradas con despacho parcial" tono="slate" icono="check" activo={tab==='finalizada'}  onClick={() => setTab('finalizada')} />
       </section>
 
       {/* Filtros y búsqueda */}
@@ -548,7 +598,7 @@ function Tablero({ filas, recargar, mensaje, setMensaje }) {
               <Icon name="search" />
             </span>
             <input type="search" value={q} onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar N° OC, guía, factura o proveedor…"
+              placeholder="Buscar N° OC, guía o factura…"
               className="w-full rounded-lg border-0 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 ring-1 ring-inset ring-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
 
@@ -575,13 +625,6 @@ function Tablero({ filas, recargar, mensaje, setMensaje }) {
           </div>
 
           <div className="flex flex-1 flex-wrap items-center gap-2 xl:justify-end">
-            {proveedores.length > 0 && (
-              <select value={prov} onChange={(e) => setProv(e.target.value)}
-                className="cursor-pointer rounded-lg border-0 bg-white px-3 py-2 text-sm text-slate-900 ring-1 ring-inset ring-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                <option value="todas">Todos los proveedores</option>
-                {proveedores.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            )}
             <button onClick={limpiar}
               className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-sm font-medium text-slate-700 ring-1 ring-inset ring-slate-200 transition hover:bg-slate-50">
               <Icon name="refresh" /> Limpiar
@@ -618,6 +661,8 @@ function Tablero({ filas, recargar, mensaje, setMensaje }) {
                 filtradas.map((fila) => (
                   <FilaOC key={fila.orden.id} fila={fila}
                     onEliminar={eliminar}
+                    onFinalizar={finalizar}
+                    onReabrir={reabrir}
                     onSubirDoc={(ordenId, contexto) => setModal({ open: true, ordenId, contexto })} />
                 ))
               )}
@@ -641,7 +686,7 @@ function Tablero({ filas, recargar, mensaje, setMensaje }) {
       <ModalCarga
         abierto={modal.open}
         onClose={() => setModal({ open: false, ordenId: null, contexto: '' })}
-        onSubir={(archivo) => cargar(archivo, modal.ordenId)}
+        onSubir={(archivos, alAvanzar) => cargarVarios(archivos, modal.ordenId, alAvanzar)}
         contexto={modal.contexto}
       />
     </div>
@@ -678,7 +723,13 @@ export default function Dashboard() {
   }
 
   async function borrarDummies() {
-    if (!confirm('¿Borrar todos los dummies?')) return
+    const ok = await confirmar({
+      titulo: '¿Borrar todos los dummies?',
+      texto: 'Se eliminan los documentos de ejemplo. Los documentos que subiste no se tocan.',
+      boton: 'Borrar',
+      peligro: true,
+    })
+    if (!ok) return
     await fetch('/api/dummies', { method: 'DELETE' })
     recargar()
   }

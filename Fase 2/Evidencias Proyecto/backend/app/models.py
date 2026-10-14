@@ -36,6 +36,9 @@ class Documento(Base):
 
     # Guías y facturas: la orden de compra a la que corresponden (su fila en el dashboard)
     orden_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Orden de compra cerrada con un despacho parcial (por acuerdo con el proveedor) y por qué
+    finalizada: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    motivo_cierre: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Documento de ejemplo creado desde el dashboard, sin archivo
     dummy: Mapped[bool | None] = mapped_column(Boolean, default=False)
 
