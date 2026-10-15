@@ -117,6 +117,7 @@ def test_a_numero_con_punto_decimal():
     assert a_numero("503,600", ",") == 503.6
     assert a_numero("12.50", ".") == 12.5
     assert a_numero("2.790.00", ".") == 2790  # el OCR leyó la coma de los miles como punto
+    assert a_numero("503.600", ".") == 503600  # ídem, sin decimales
 
 
 def test_separador_decimal_del_documento():

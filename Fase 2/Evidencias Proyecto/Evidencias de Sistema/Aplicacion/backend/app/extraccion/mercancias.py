@@ -18,8 +18,9 @@ from app.services.ocr import Palabra
 
 # Encabezado de la columna de cantidad: "Cantidad", "Cant.", "CANT", "Qty".
 # Basta con que la palabra lo contenga: el OCR a veces pega el borde de la celda o lee mal
-# el final ("ICanTIDACI", "Cantldad"). Exigir otro encabezado en la fila evita falsos positivos.
-ENCABEZADO_CANTIDAD = r"cant|qty"
+# el final ("ICanTIDACI", "Cantldad"), o confunde la "t" ("Icanribaci"). Exigir otro encabezado
+# en la fila evita falsos positivos.
+ENCABEZADO_CANTIDAD = r"cant|can[a-z]i|qty"
 
 # Encabezado de la columna con el nombre de la mercancía ("descr" porque el OCR lee "Descr:pción").
 ENCABEZADO_DESCRIPCION = r"\b(descr|detalle|producto|articulo|glosa|mercaderia|mercancia|nombre)"
@@ -133,6 +134,10 @@ def a_numero(texto: str, decimal: str = ",") -> float | None:
             decimal = sep  # "1.5" con coma decimal: no puede ser de miles
         elif sep != decimal:
             decimal = ""  # "1.500" en Chile, "503,600" con punto decimal: miles
+        elif decimal == "." and grupos_de_mil:
+            # Con punto decimal los montos llevan 2 decimales ("51,600.00"): "503.600" es la coma
+            # de los miles mal leída por el OCR.
+            decimal = ""
     if decimal and decimal in texto:
         entero, _, fraccion = texto.rpartition(decimal)
         texto = re.sub(r"[.,]", "", entero) + "." + fraccion
