@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import './App.css'
-import { confirmar } from './alertas.js'
+import { confirmar, mostrarError } from './alertas.js'
 
 const NOMBRES = {
   factura: 'Factura',
@@ -40,6 +40,22 @@ function Verificacion({ doc }) {
   )
 }
 
+// Guía de despacho leída con poca confianza: se pueden corregir sus cantidades a mano. Sin tabla de
+// ítems se ingresa solo el total.
+export async function guardarCantidades(id, cantidades) {
+  const res = await fetch(`/api/documentos/${id}/cantidades`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cantidades: cantidades.map(Number) }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Revisa las cantidades ingresadas')
+  return data
+}
+
+// Cantidades válidas para guardar: todas números mayores o iguales a 0
+export const cantidadesValidas = (valores) => valores.every((v) => v !== '' && Number(v) >= 0)
+
 export default function App() {
   const [archivo, setArchivo] = useState(null)
   const [resultado, setResultado] = useState(null)
@@ -47,6 +63,8 @@ export default function App() {
   const [error, setError] = useState('')
   const [historial, setHistorial] = useState([])
   const [filtro, setFiltro] = useState('')
+  // Cantidades que se están editando (texto de cada input), o null si no se está editando
+  const [edicion, setEdicion] = useState(null)
 
   async function cargarHistorial() {
     try {
@@ -76,6 +94,7 @@ export default function App() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Error al analizar el documento')
       setResultado(data)
+      setEdicion(null)
       cargarHistorial()
     } catch (err) {
       setError(err.message)
@@ -86,8 +105,31 @@ export default function App() {
 
   async function verDocumento(id) {
     const res = await fetch(`/api/documentos/${id}`)
-    if (res.ok) setResultado(await res.json())
+    if (res.ok) {
+      setResultado(await res.json())
+      setEdicion(null)
+    }
   }
+
+  function editarCantidades() {
+    const items = resultado.items
+    setEdicion(items.length ? items.map((i) => String(i.cantidad ?? '')) : [String(resultado.cantidad_total ?? '')])
+  }
+
+  async function guardarEdicion() {
+    try {
+      setResultado(await guardarCantidades(resultado.id, edicion))
+      setEdicion(null)
+      cargarHistorial()
+    } catch (err) {
+      mostrarError(err.message)
+    }
+  }
+
+  const inputCantidad = (i) => (
+    <input type="number" min="0" step="any" className="cantidad" value={edicion[i]}
+           onChange={(e) => setEdicion(edicion.map((v, j) => (j === i ? e.target.value : v)))} />
+  )
 
   async function eliminar(id) {
     const ok = await confirmar({
@@ -146,8 +188,31 @@ export default function App() {
           {!esPdf && <img className="vista-previa" src={resultado.url_archivo} alt={resultado.archivo} />}
 
           <h3>Mercancías</h3>
+          {resultado.cantidades_editables && (
+            <div className="verificacion revisar edicion">
+              <span>
+                ⚠ Confianza baja ({Math.round(resultado.confianza * 100)}%): compara las cantidades con el
+                original y corrígelas si es necesario.
+              </span>
+              {edicion ? (
+                <span className="acciones">
+                  <button type="button" onClick={guardarEdicion} disabled={!cantidadesValidas(edicion)}>Guardar</button>
+                  <button type="button" className="secundario" onClick={() => setEdicion(null)}>Cancelar</button>
+                </span>
+              ) : (
+                <button type="button" onClick={editarCantidades}>Editar cantidades</button>
+              )}
+            </div>
+          )}
+          {resultado.cantidades_editadas && (
+            <p className="verificacion ok">✎ Las cantidades se corrigieron a mano.</p>
+          )}
           {resultado.items.length === 0 ? (
-            <p className="vacio">No se encontró una tabla de ítems con columna de cantidad.</p>
+            edicion ? (
+              <p>Total de unidades despachadas: {inputCantidad(0)}</p>
+            ) : (
+              <p className="vacio">No se encontró una tabla de ítems con columna de cantidad.</p>
+            )
           ) : (
             <table className="items">
               <thead>
@@ -161,7 +226,7 @@ export default function App() {
                 {resultado.items.map((item, i) => (
                   <tr key={i}>
                     <td>{item.descripcion || '—'}</td>
-                    <td className="numero">{formatoCantidad(item.cantidad)}</td>
+                    <td className="numero">{edicion ? inputCantidad(i) : formatoCantidad(item.cantidad)}</td>
                     {conValores && <td className="numero">{formatoPesos(item.total)}</td>}
                   </tr>
                 ))}
@@ -169,7 +234,11 @@ export default function App() {
               <tfoot>
                 <tr>
                   <th>Total ({resultado.items.length} ítems)</th>
-                  <th className="numero">{formatoCantidad(resultado.cantidad_total)}</th>
+                  <th className="numero">
+                    {formatoCantidad(edicion && cantidadesValidas(edicion)
+                      ? edicion.reduce((suma, v) => suma + Number(v), 0)
+                      : resultado.cantidad_total)}
+                  </th>
                   {conValores && <th className="numero">{formatoPesos(resultado.valor_total)}</th>}
                 </tr>
               </tfoot>

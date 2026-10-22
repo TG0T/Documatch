@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import App from './App.jsx'
+import App, { cantidadesValidas, guardarCantidades } from './App.jsx'
 import { confirmar, mostrarError, pedirTexto } from './alertas.js'
 
 /* ══════════════════════════════════════════════════════════════
@@ -11,6 +11,7 @@ const ESCENARIOS = [
   ['parcial', 'OC con despacho parcial'],
   ['discrepancia', 'OC con discrepancia en factura'],
   ['pendiente', 'OC pendiente (sin guía ni factura)'],
+  ['baja_confianza', 'Guía con baja confianza (editable)'],
 ]
 
 const ESTADOS = {
@@ -96,6 +97,7 @@ function Icon({ name, className = 'h-4 w-4' }) {
     clip:    <path strokeLinecap="round" strokeLinejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />,
     doc:     <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />,
     box:     <path strokeLinecap="round" strokeLinejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />,
+    pencil:  <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />,
     trash:   <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />,
   }
   return (
@@ -290,8 +292,78 @@ function ModalCarga({ abierto, onClose, onSubir, contexto }) {
    FILA EXPANDIBLE (ACORDEÓN)
    ══════════════════════════════════════════════════════════════ */
 
+// Ítems de un documento. Una guía de despacho leída con poca confianza permite corregir sus
+// cantidades (sin tabla de ítems, solo el total).
+function ItemsDocumento({ doc, onCambio }) {
+  const [edicion, setEdicion] = useState(null)
+
+  function editar() {
+    setEdicion(doc.items.length ? doc.items.map((i) => String(i.cantidad ?? '')) : [String(doc.cantidad_total ?? '')])
+  }
+
+  async function guardar() {
+    try {
+      await guardarCantidades(doc.id, edicion)
+      setEdicion(null)
+      onCambio()
+    } catch (err) {
+      mostrarError(err.message)
+    }
+  }
+
+  const input = (i) => (
+    <input type="number" min="0" step="any" value={edicion[i]}
+      onChange={(e) => setEdicion(edicion.map((v, j) => (j === i ? e.target.value : v)))}
+      className="w-20 rounded-md border-0 px-1.5 py-0.5 text-right text-xs tabular-nums text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-indigo-500" />
+  )
+
+  return (
+    <>
+      {doc.cantidades_editables && (
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] text-amber-800 ring-1 ring-inset ring-amber-600/20">
+          <span>Confianza baja ({Math.round(doc.confianza * 100)}%)</span>
+          {edicion ? (
+            <span className="flex gap-1">
+              <button onClick={() => setEdicion(null)}
+                className="rounded px-1.5 py-0.5 font-medium text-slate-600 hover:bg-white">Cancelar</button>
+              <button onClick={guardar} disabled={!cantidadesValidas(edicion)}
+                className="rounded bg-slate-900 px-1.5 py-0.5 font-medium text-white hover:bg-slate-800 disabled:opacity-40">Guardar</button>
+            </span>
+          ) : (
+            <button onClick={editar} title="Corregir las cantidades leídas por el OCR"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium hover:bg-white">
+              <Icon name="pencil" className="h-3 w-3" /> Editar cantidades
+            </button>
+          )}
+        </div>
+      )}
+      {doc.cantidades_editadas && !edicion && (
+        <p className="mt-1 text-[11px] italic text-slate-500">Cantidades corregidas a mano</p>
+      )}
+      {doc.items.length === 0 ? (
+        edicion ? (
+          <p className="mt-1.5 flex items-center justify-between gap-3 text-xs text-slate-600">Total despachado {input(0)}</p>
+        ) : (
+          <p className="mt-1.5 text-[11px] italic text-slate-400">No se encontró la tabla de ítems</p>
+        )
+      ) : (
+        <ul className="mt-1.5 divide-y divide-slate-100 text-xs">
+          {doc.items.map((it, i) => (
+            <li key={i} className="flex items-start justify-between gap-3 py-1">
+              <span className="text-slate-600">{it.descripcion || '—'}</span>
+              {edicion
+                ? input(i)
+                : <span className="shrink-0 tabular-nums font-medium text-slate-800">{formatoCantidad(it.cantidad)}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  )
+}
+
 // Una columna del desglose: los ítems de la OC, de sus guías o de sus facturas
-function ColumnaItems({ titulo, total, docs, tono }) {
+function ColumnaItems({ titulo, total, docs, tono, onCambio }) {
   const t = TONES[tono]
   return (
     <div className="p-4">
@@ -308,18 +380,7 @@ function ColumnaItems({ titulo, total, docs, tono }) {
           {docs.map((doc) => (
             <div key={doc.id}>
               <DocumentoChip doc={doc} tono={tono} />
-              {doc.items.length === 0 ? (
-                <p className="mt-1.5 text-[11px] italic text-slate-400">No se encontró la tabla de ítems</p>
-              ) : (
-                <ul className="mt-1.5 divide-y divide-slate-100 text-xs">
-                  {doc.items.map((it, i) => (
-                    <li key={i} className="flex items-start justify-between gap-3 py-1">
-                      <span className="text-slate-600">{it.descripcion || '—'}</span>
-                      <span className="shrink-0 tabular-nums font-medium text-slate-800">{formatoCantidad(it.cantidad)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <ItemsDocumento doc={doc} onCambio={onCambio} />
             </div>
           ))}
         </div>
@@ -328,7 +389,7 @@ function ColumnaItems({ titulo, total, docs, tono }) {
   )
 }
 
-function FilaOC({ fila, onEliminar, onSubirDoc, onFinalizar, onReabrir }) {
+function FilaOC({ fila, onEliminar, onSubirDoc, onFinalizar, onReabrir, onCambio }) {
   const [abierta, setAbierta] = useState(false)
   const id = fila.orden.id
   const codigo = fila.orden.codigo ?? '(sin número)'
@@ -422,9 +483,9 @@ function FilaOC({ fila, onEliminar, onSubirDoc, onFinalizar, onReabrir }) {
               </div>
 
               <div className="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-3 md:divide-x md:divide-y-0">
-                <ColumnaItems titulo="Pedido (OC)" total={fila.pedido} docs={[fila.orden]} tono="slate" />
-                <ColumnaItems titulo="Recibido (guías)" total={fila.despachado} docs={fila.guias} tono="sky" />
-                <ColumnaItems titulo="Facturado" total={fila.facturado} docs={fila.facturas} tono="violet" />
+                <ColumnaItems titulo="Pedido (OC)" total={fila.pedido} docs={[fila.orden]} tono="slate" onCambio={onCambio} />
+                <ColumnaItems titulo="Recibido (guías)" total={fila.despachado} docs={fila.guias} tono="sky" onCambio={onCambio} />
+                <ColumnaItems titulo="Facturado" total={fila.facturado} docs={fila.facturas} tono="violet" onCambio={onCambio} />
               </div>
             </div>
           </td>
@@ -555,7 +616,7 @@ function Tablero({ filas, recargar, mensaje, setMensaje }) {
             Dashboard Documatch
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Cruce entre Órdenes de Compra, Guías de Despacho y Facturas de proveedor.
+            Cruce entre Adquisiciones, Guías de Despacho y Facturas de proveedor.
           </p>
         </div>
         <div className="flex gap-2">
@@ -582,7 +643,7 @@ function Tablero({ filas, recargar, mensaje, setMensaje }) {
 
       {/* KPIs */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <KpiCard titulo="Órdenes de compra"   valor={kpis.total}        sub="Total en el dashboard" tono="slate"   icono="box"   activo={tab==='todos'}         onClick={() => setTab('todos')} />
+        <KpiCard titulo="Adquisiciones"       valor={kpis.total}        sub="Total en el dashboard" tono="slate"   icono="box"   activo={tab==='todos'}         onClick={() => setTab('todos')} />
         <KpiCard titulo="Conciliadas"         valor={kpis.ok}           sub="Match completo"             tono="emerald" icono="check" activo={tab==='ok'}            onClick={() => setTab('ok')} />
         <KpiCard titulo="Entregas parciales"  valor={kpis.parcial}      sub="Despacho incompleto"        tono="amber"   icono="clock" activo={tab==='parcial'}       onClick={() => setTab('parcial')} />
         <KpiCard titulo="Discrepancias"       valor={kpis.discrepancia} sub="Revisar precio/cantidad"    tono="rose"    icono="alert" activo={tab==='discrepancia'} onClick={() => setTab('discrepancia')} />
@@ -663,6 +724,7 @@ function Tablero({ filas, recargar, mensaje, setMensaje }) {
                     onEliminar={eliminar}
                     onFinalizar={finalizar}
                     onReabrir={reabrir}
+                    onCambio={recargar}
                     onSubirDoc={(ordenId, contexto) => setModal({ open: true, ordenId, contexto })} />
                 ))
               )}
