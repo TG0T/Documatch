@@ -3,11 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import config, models  # noqa: F401  (models registra las tablas en Base)
 from app.api import dashboard, documentos
-from app.db import Base, agregar_columnas_faltantes, engine
+from app.db import crear_base
 
-# Crea las tablas si no existen (suficiente para SQLite en desarrollo)
-Base.metadata.create_all(bind=engine)
-agregar_columnas_faltantes()
+# Crea la base (Base de Datos/schema.sql) si no existe
+crear_base()
 
 app = FastAPI(title="Clasificador de documentos")
 

@@ -1,12 +1,14 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
 
 
 class Documento(Base):
+    """Tabla definida en "Base de Datos/schema.sql" (ahí están las restricciones, triggers y vistas):
+    este modelo debe tener las mismas columnas."""
     __tablename__ = "documentos"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -15,6 +17,8 @@ class Documento(Base):
     nombre_guardado: Mapped[str] = mapped_column(String(255), unique=True)
     tipo_contenido: Mapped[str] = mapped_column(String(100))
     tamano: Mapped[int] = mapped_column(Integer)
+    # SHA-256 del archivo, para no guardar dos veces el mismo (None en los dummies)
+    hash_archivo: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     tipo: Mapped[str] = mapped_column(String(50), index=True)
     # Número impreso en el documento ("876-329-SE22"); None si el OCR no lo encontró
@@ -33,9 +37,12 @@ class Documento(Base):
     # (o es None: no se encontró el neto) hay que revisar los valores a mano.
     neto_documento: Mapped[float | None] = mapped_column(Float, nullable=True)
     valores_coinciden: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Cantidades corregidas a mano (solo guías de despacho leídas con poca confianza)
+    cantidades_editadas: Mapped[bool | None] = mapped_column(Boolean, default=False)
 
     # Guías y facturas: la orden de compra a la que corresponden (su fila en el dashboard)
-    orden_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    orden_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("documentos.id", ondelete="SET NULL"),
+                                                 nullable=True)
     # Orden de compra cerrada con un despacho parcial (por acuerdo con el proveedor) y por qué
     finalizada: Mapped[bool | None] = mapped_column(Boolean, default=False)
     motivo_cierre: Mapped[str | None] = mapped_column(String(255), nullable=True)

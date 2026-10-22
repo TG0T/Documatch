@@ -12,6 +12,8 @@ dist/
 
 # Datos locales del backend (base SQLite y archivos subidos)
 **/backend/data/
+**/Base de Datos/*.db
+**/Base de Datos/*.db-journal
 
 # Variables de entorno
 .env
@@ -27,3 +29,6 @@ Desktop.ini
 
 # Archivos temporales de Office (~$archivo.docx)
 ~$*
+
+# Script local de inicialización
+/iniciar.ps1
