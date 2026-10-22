@@ -6,6 +6,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
+from app.api.documentos import cantidades_editables
 from app.classifier.clasificador import codigo
 from app.db import get_db
 from app.models import Documento
@@ -23,6 +24,9 @@ def resumen(doc: Documento) -> dict:
         "cantidad_total": doc.cantidad_total,
         "valor_total": doc.valor_total,
         "items": doc.items or [],  # tal como los leyó el OCR (sin emparejar entre documentos)
+        "confianza": doc.confianza,
+        "cantidades_editables": cantidades_editables(doc),
+        "cantidades_editadas": bool(doc.cantidades_editadas),
         "dummy": bool(doc.dummy),
         "url_archivo": None if doc.dummy else f"/api/documentos/{doc.id}/archivo",
     }
@@ -110,10 +114,20 @@ PRODUCTOS = [
     "Pallet de madera", "Cable eléctrico 2,5 mm (rollo)", "Tornillo hexagonal 1/2\"", "Resma papel carta",
 ]
 
-ESCENARIOS = {"ok", "parcial", "discrepancia", "pendiente"}
+ESCENARIOS = {"ok", "parcial", "discrepancia", "pendiente", "baja_confianza"}
 
 
-def crear_dummy(db: Session, tipo: str, numero: str, items: list[dict], orden_id: int | None = None) -> Documento:
+def numero_libre(db: Session, tipo: str, generar) -> str:
+    """Un número al azar que no use otro documento del mismo tipo (la base no acepta duplicados)."""
+    while True:
+        numero = generar()
+        if db.scalar(select(Documento.id).where(Documento.tipo == tipo, Documento.numero == numero)) is None:
+            return numero
+
+
+def crear_dummy(db: Session, tipo: str, generar_numero, items: list[dict], orden_id: int | None = None,
+                confianza: float = 1.0) -> Documento:
+    numero = numero_libre(db, tipo, generar_numero)
     con_valores = tipo != "guia_despacho"
     items = [{**i, "total": i["total"] if con_valores else None} for i in items]
     valor = sum(i["total"] for i in items) if con_valores else None
@@ -124,7 +138,7 @@ def crear_dummy(db: Session, tipo: str, numero: str, items: list[dict], orden_id
         tamano=0,
         tipo=tipo,
         numero=numero,
-        confianza=1.0,
+        confianza=confianza,
         puntajes={},
         coincidencias={},
         texto="Documento de ejemplo creado desde el dashboard.",
@@ -141,6 +155,10 @@ def crear_dummy(db: Session, tipo: str, numero: str, items: list[dict], orden_id
     return doc
 
 
+def numero_al_azar() -> str:
+    return str(random.randint(1000, 99999))
+
+
 def item(descripcion: str, cantidad: int, precio: int) -> dict:
     return {"descripcion": descripcion, "cantidad": cantidad, "total": cantidad * precio}
 
@@ -148,13 +166,14 @@ def item(descripcion: str, cantidad: int, precio: int) -> dict:
 @router.post("/dummies", status_code=201)
 def agregar_dummy(escenario: str, db: Session = Depends(get_db)):
     """Crea una OC de ejemplo con su guía y factura según el escenario: "ok" (todo coincide),
-    "parcial" (se despachó menos), "discrepancia" (se facturó más) o "pendiente" (solo la OC)."""
+    "parcial" (se despachó menos), "discrepancia" (se facturó más), "pendiente" (solo la OC) o
+    "baja_confianza" (guía leída con poca confianza y una cantidad mal leída, que se puede corregir)."""
     if escenario not in ESCENARIOS:
         raise HTTPException(400, f"Escenario no válido. Usa: {', '.join(sorted(ESCENARIOS))}")
 
     pedidos = [(p, random.randint(2, 50), random.randint(10, 500) * 100)
                for p in random.sample(PRODUCTOS, random.randint(1, 3))]
-    orden = crear_dummy(db, "orden_compra", f"{random.randint(100, 999)}-{random.randint(10, 999)}-SE26",
+    orden = crear_dummy(db, "orden_compra", lambda: f"{random.randint(100, 999)}-{random.randint(10, 999)}-SE26",
                         [item(*p) for p in pedidos])
 
     if escenario != "pendiente":
@@ -162,13 +181,17 @@ def agregar_dummy(escenario: str, db: Session = Depends(get_db)):
         if escenario == "parcial":  # el primer producto llega incompleto
             p, cantidad, precio = despachados[0]
             despachados[0] = (p, cantidad // 2, precio)
-        crear_dummy(db, "guia_despacho", str(random.randint(1000, 99999)), [item(*p) for p in despachados], orden.id)
+        leidos, confianza = list(despachados), 1.0
+        if escenario == "baja_confianza":  # el OCR leyó un 0 de más en la primera cantidad
+            p, cantidad, precio = leidos[0]
+            leidos[0], confianza = (p, cantidad * 10, precio), round(random.uniform(0.40, 0.60), 2)
+        crear_dummy(db, "guia_despacho", numero_al_azar, [item(*p) for p in leidos], orden.id, confianza)
 
         facturados = list(despachados)
         if escenario == "discrepancia":  # se factura una unidad más de lo recibido
             p, cantidad, precio = facturados[0]
             facturados[0] = (p, cantidad + 1, precio)
-        crear_dummy(db, "factura", str(random.randint(1000, 99999)), [item(*p) for p in facturados], orden.id)
+        crear_dummy(db, "factura", numero_al_azar, [item(*p) for p in facturados], orden.id)
 
     db.commit()
     return resumen(orden)
