@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import App, { cantidadesValidas, guardarCantidades } from './App.jsx'
+import App, { Confianza, cantidadesValidas, colorConfianza, guardarCantidades } from './App.jsx'
 import { confirmar, mostrarError, pedirTexto } from './alertas.js'
+import { Icon } from './iconos.jsx'
+import Indicadores from './Indicadores.jsx'
 
 /* ══════════════════════════════════════════════════════════════
-   CONFIGURACIÓN · Escenarios y estados
+   CONFIGURACIÓN · Vistas y estados
    ══════════════════════════════════════════════════════════════ */
 
-const ESCENARIOS = [
-  ['ok', 'OC completa (ok)'],
-  ['parcial', 'OC con despacho parcial'],
-  ['discrepancia', 'OC con discrepancia en factura'],
-  ['pendiente', 'OC pendiente (sin guía ni factura)'],
-  ['baja_confianza', 'Guía con baja confianza (editable)'],
+// Opciones del panel lateral: [clave, texto, ícono, descripción]
+const VISTAS = [
+  ['dashboard', 'Dashboard', 'box', 'Órdenes, guías y facturas'],
+  ['indicadores', 'Indicadores', 'chart', 'KPI y gráficos'],
+  ['clasificador', 'Clasificador', 'doc', 'Analizar un documento'],
 ]
 
 const ESTADOS = {
@@ -79,36 +80,6 @@ async function subir(archivo, ordenId) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   ICONOS (SVG inline)
-   ══════════════════════════════════════════════════════════════ */
-
-function Icon({ name, className = 'h-4 w-4' }) {
-  const paths = {
-    check:   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />,
-    clock:   <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />,
-    alert:   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />,
-    truck:   <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />,
-    search:  <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />,
-    x:       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />,
-    chevR:   <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />,
-    chevD:   <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />,
-    plus:    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />,
-    refresh: <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />,
-    clip:    <path strokeLinecap="round" strokeLinejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />,
-    doc:     <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />,
-    box:     <path strokeLinecap="round" strokeLinejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />,
-    pencil:  <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />,
-    trash:   <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />,
-  }
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-         strokeWidth="1.8" stroke="currentColor" className={className}>
-      {paths[name]}
-    </svg>
-  )
-}
-
-/* ══════════════════════════════════════════════════════════════
    COMPONENTES ATÓMICOS
    ══════════════════════════════════════════════════════════════ */
 
@@ -123,7 +94,8 @@ function EstadoBadge({ estado }) {
   )
 }
 
-function DocumentoChip({ doc, tono = 'slate' }) {
+// `conConfianza`: muestra el porcentaje de confianza del escaneo (el desglose lo muestra aparte)
+function DocumentoChip({ doc, tono = 'slate', conConfianza = true }) {
   const t = TONES[tono]
   const label = doc.codigo ?? doc.archivo
   const contenido = (
@@ -136,19 +108,31 @@ function DocumentoChip({ doc, tono = 'slate' }) {
           <span className="tabular-nums">{formatoCantidad(doc.cantidad_total)} u.</span>
         </>
       )}
+      {/* Confianza del escaneo: punto de color + porcentaje */}
+      {conConfianza && (
+        <>
+          <span className="opacity-40">·</span>
+          <span className="inline-flex items-center gap-1 tabular-nums">
+            <span className={`h-1.5 w-1.5 rounded-full ${colorConfianza(doc.confianza)}`} />
+            {Math.round(doc.confianza * 100)}%
+          </span>
+        </>
+      )}
     </>
   )
+  const confianza = `Confianza del escaneo: ${Math.round(doc.confianza * 100)}%`
   if (doc.url_archivo) {
     return (
       <a href={doc.url_archivo} target="_blank" rel="noreferrer"
-         title={`Abrir ${label}`}
+         title={`Abrir ${label} · ${confianza}`}
          className={`chip inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ring-1 ring-inset transition hover:shadow-sm ${t.chipBg} ${t.chipText} ${t.chipRing}`}>
         {contenido}
       </a>
     )
   }
   return (
-    <span className={`chip inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ring-1 ring-inset ${t.chipBg} ${t.chipText} ${t.chipRing}`}>
+    <span title={confianza}
+      className={`chip inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ring-1 ring-inset ${t.chipBg} ${t.chipText} ${t.chipRing}`}>
       {contenido}
     </span>
   )
@@ -379,7 +363,10 @@ function ColumnaItems({ titulo, total, docs, tono, onCambio }) {
         <div className="space-y-3">
           {docs.map((doc) => (
             <div key={doc.id}>
-              <DocumentoChip doc={doc} tono={tono} />
+              <DocumentoChip doc={doc} tono={tono} conConfianza={false} />
+              <p className="mt-1.5 flex items-center gap-2 text-[11px] text-slate-500">
+                Confianza del escaneo <Confianza valor={doc.confianza} ancho="w-14" />
+              </p>
               <ItemsDocumento doc={doc} onCambio={onCambio} />
             </div>
           ))}
@@ -414,6 +401,9 @@ function FilaOC({ fila, onEliminar, onSubirDoc, onFinalizar, onReabrir, onCambio
               {fila.orden.cantidad_total != null
                 ? `${formatoCantidad(fila.orden.cantidad_total)} u. totales`
                 : 'Sin total'}
+            </span>
+            <span className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500" title="Confianza del escaneo de la orden de compra">
+              Confianza <Confianza valor={fila.orden.confianza} ancho="w-12" />
             </span>
           </div>
         </td>
@@ -778,73 +768,54 @@ export default function Dashboard() {
 
   useEffect(() => { recargar() }, [])
 
-  async function agregarDummy(escenario) {
-    await fetch(`/api/dummies?escenario=${escenario}`, { method: 'POST' })
-    setVista('dashboard')
-    recargar()
-  }
-
-  async function borrarDummies() {
-    const ok = await confirmar({
-      titulo: '¿Borrar todos los dummies?',
-      texto: 'Se eliminan los documentos de ejemplo. Los documentos que subiste no se tocan.',
-      boton: 'Borrar',
-      peligro: true,
-    })
-    if (!ok) return
-    await fetch('/api/dummies', { method: 'DELETE' })
-    recargar()
+  // El dashboard y los indicadores usan los mismos datos: se recargan al entrar a cualquiera
+  function ir(destino) {
+    setVista(destino)
+    if (destino !== 'clasificador') recargar()
   }
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900">
       {/* Sidebar negro */}
-      <aside className="w-60 shrink-0 border-r border-slate-800 bg-slate-950 p-4 text-white">
-        <div className="mb-6 flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-900 shadow-lg shadow-white/10">
-            <Icon name="box" className="h-5 w-5" />
+      {/* sticky: el panel queda a la vista al bajar por la página */}
+      <aside className="sticky top-0 h-screen w-72 shrink-0 overflow-y-auto border-r border-slate-800 bg-slate-950 px-4 py-6 text-white">
+        <div className="mb-8 flex items-center gap-3 px-1">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-slate-900 shadow-lg shadow-white/10">
+            <Icon name="box" className="h-6 w-6" />
           </div>
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-white">Documatch</p>
-            <p className="text-xs text-slate-400">Clasificador de documentos</p>
+            <p className="text-base font-semibold text-white">Documatch</p>
+            <p className="text-sm text-slate-400">Clasificador de documentos</p>
           </div>
         </div>
 
-        <nav className="space-y-1.5">
+        <p className="mb-3 px-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Menú</p>
+        <nav className="space-y-2">
           {/* Seleccionado: blanco/negro · No seleccionado: negro/blanco */}
-          <button onClick={() => { setVista('dashboard'); recargar() }}
-            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${
-              vista === 'dashboard'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'bg-slate-900 text-white ring-1 ring-inset ring-slate-800 hover:bg-slate-800'
-            }`}>
-            <Icon name="box" /> Dashboard
-          </button>
-          <button onClick={() => setVista('clasificador')}
-            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${
-              vista === 'clasificador'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'bg-slate-900 text-white ring-1 ring-inset ring-slate-800 hover:bg-slate-800'
-            }`}>
-            <Icon name="doc" /> Clasificador
-          </button>
-        </nav>
-
-        <div className="mt-6 border-t border-slate-800 pt-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Dummies</p>
-          <div className="space-y-1.5">
-            {ESCENARIOS.map(([escenario, texto]) => (
-              <button key={escenario} onClick={() => agregarDummy(escenario)}
-                className="w-full rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-left text-xs font-medium text-slate-300 transition hover:border-slate-700 hover:bg-slate-800 hover:text-white">
-                {texto}
+          {VISTAS.map(([clave, texto, icono, descripcion]) => {
+            const activa = vista === clave
+            return (
+              <button key={clave} onClick={() => ir(clave)} aria-current={activa ? 'page' : undefined}
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+                  activa
+                    ? 'bg-white text-slate-900 shadow-md'
+                    : 'bg-slate-900 text-white ring-1 ring-inset ring-slate-800 hover:bg-slate-800 hover:ring-slate-700'
+                }`}>
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                  activa ? 'bg-slate-900 text-white' : 'bg-slate-800 text-slate-200'
+                }`}>
+                  <Icon name={icono} className="h-5 w-5" />
+                </span>
+                <span className="min-w-0 leading-tight">
+                  <span className="block text-[15px] font-semibold">{texto}</span>
+                  <span className={`mt-0.5 block truncate text-xs ${activa ? 'text-slate-500' : 'text-slate-400'}`}>
+                    {descripcion}
+                  </span>
+                </span>
               </button>
-            ))}
-            <button onClick={borrarDummies}
-              className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300">
-              Borrar dummies
-            </button>
-          </div>
-        </div>
+            )
+          })}
+        </nav>
       </aside>
 
       {/* Contenido */}
@@ -854,9 +825,9 @@ export default function Dashboard() {
             {error}
           </div>
         )}
-        {vista === 'dashboard'
-          ? <Tablero filas={filas} recargar={recargar} mensaje={mensaje} setMensaje={setMensaje} />
-          : <App />}
+        {vista === 'dashboard' && <Tablero filas={filas} recargar={recargar} mensaje={mensaje} setMensaje={setMensaje} />}
+        {vista === 'indicadores' && <Indicadores filas={filas} recargar={recargar} irAlDashboard={() => ir('dashboard')} />}
+        {vista === 'clasificador' && <App />}
       </main>
     </div>
   )

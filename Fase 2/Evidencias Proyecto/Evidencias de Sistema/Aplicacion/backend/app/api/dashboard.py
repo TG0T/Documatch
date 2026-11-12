@@ -23,6 +23,8 @@ def resumen(doc: Documento) -> dict:
         "archivo": doc.nombre_original,
         "cantidad_total": doc.cantidad_total,
         "valor_total": doc.valor_total,
+        "valores_coinciden": doc.valores_coinciden,
+        "fecha": doc.fecha_creacion.isoformat() if doc.fecha_creacion else None,
         "items": doc.items or [],  # tal como los leyó el OCR (sin emparejar entre documentos)
         "confianza": doc.confianza,
         "cantidades_editables": cantidades_editables(doc),
