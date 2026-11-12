@@ -142,6 +142,56 @@ def test_numero_en_otra_linea_y_con_puntos_de_miles():
     assert clasificar(texto).numero == "178880"
 
 
+def test_numero_con_el_simbolo_leido_como_e():
+    # Texto real del OCR de una guía escaneada: el "°" del recuadro rojo se leyó como "e" y la
+    # "I" de ELECTRÓNICA como "|".
+    texto = ("SUMINISTROS INDUSTRIALES CORDILLERA SpA\n"
+             "Av. Los Conquistadores 1820, Of. 304, Providencia, Santiago GUÍA DE DESPACHO ELECTRÓN|CA\n"
+             "Teléfono: +56 2 2345 6789 - ventasQcordillera-demo.cl Ne 58210\n"
+             "Transportista: Transportes Ruta Sur Ltda.   Patente: KXLT-42")
+    resultado = clasificar(texto)
+    assert resultado.tipo == "guia_despacho"
+    assert resultado.numero == "58210"
+
+
+def test_columna_folio_de_las_referencias_no_es_el_numero():
+    # Texto real del OCR de una factura de prueba: Tesseract lee la página por columnas y la columna
+    # "Folio" de la tabla de referencias (con el número de la OC debajo) queda antes que el
+    # recuadro del SII ("N* 32003").
+    texto = ("INSUMOS TECNICOS DEL MAULE LTDA.\nGiro: Comercialización de materiales eléctricos\n"
+             "SEÑOR(ES): AGRÍCOLA LOS NOGALES LTDA.\nREFERENCIAS\nTipo de documento\nOrden de Compra\n"
+             "Código\nZAP-SEG\nDescripción\nZapato de seguridad punta acero\nR.U.T.: 76.630.147-9\n"
+             "FACTURA ELECTRÓNICA\nFECHA EMISIÓN:\nFECHA VENCIMIENTO: 10-12-2026\nFolio\n4500019003\n590031\n"
+             "Cantidad\n24\nN* 32003\nS.I.I. - TALCA\nMONTO NETO $\nI.V.A. 19% $\nTOTAL $\nCEDIBLE")
+    resultado = clasificar(texto)
+    assert resultado.tipo == "factura"
+    assert resultado.numero == "32003"
+
+
+def test_folio_en_la_misma_linea_si_es_el_numero():
+    assert clasificar("GUIA DE DESPACHO\nTransportista: Ruta Sur\nFolio: 7781\nPatente: AB-CD-12").numero == "7781"
+
+
+def test_numero_solo_bajo_el_titulo():
+    # Texto real del OCR de una OC escaneada: el "N*" quedó al final de otro renglón y el número
+    # solo, debajo del título.
+    texto = ("MINERA CERRO ALTO SpA\nCamino a Mina km 12, Calama - Teléfono: +56 55 234 9000 N*\n"
+             "PROVEEDOR: INSUMOS TÉCNICOS DEL MAULE LTDA. FECHA EMISIÓN:\nCONDICIONES DE PAGO:\n"
+             "ORDEN DE COMPRA\n\n4500019037\n\n19-11-2026\n30 días")
+    assert clasificar(texto).numero == "4500019037"
+
+
+def test_fecha_bajo_el_titulo_no_es_el_numero():
+    texto = "ORDEN DE COMPRA\n19-11-2026\nProveedor: Ferretera Andina\nCondiciones de pago: 30 días"
+    assert clasificar(texto).numero is None
+
+
+def test_ne_sin_numero_no_es_marca():
+    # "ne" solo cuenta como "N°" si lo sigue un número.
+    texto = "GUIA DE DESPACHO ELECTRONICA\nTransportista: Ne Transportes\nN° 1203"
+    assert clasificar(texto).numero == "1203"
+
+
 def test_numero_de_la_referencia_no_cuenta():
     # El "N° 15962" de la factura, no el folio de la OC de las referencias.
     assert clasificar(FACTURA_CON_REFERENCIAS).numero == "15962"

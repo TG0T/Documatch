@@ -99,9 +99,12 @@ class Columna:
     def contiene(self, palabra: Palabra) -> bool:
         return self.izquierda <= palabra.cx <= self.derecha
 
-    def numero(self, fila: "Fila", decimal: str) -> float | None:
-        """El número de la fila que cae en la columna; si hay varios, el más cercano al centro."""
-        numeros = [p for p in fila.palabras if self.contiene(p) and a_numero(p.texto, decimal) is not None]
+    def numero(self, fila: "Fila", decimal: str, excluir: "Columna | None" = None) -> float | None:
+        """El número de la fila que cae en la columna; si hay varios, el más cercano al centro.
+        `excluir`: columna cuyos números no cuentan aunque caigan dentro de esta (la descripción:
+        si la cantidad de la fila no se pudo leer, no hay que tomar el "50" de "(caja 50)")."""
+        numeros = [p for p in fila.palabras if self.contiene(p) and not (excluir and excluir.contiene(p))
+                   and a_numero(p.texto, decimal) is not None]
         elegida = min(numeros, key=lambda p: abs(p.cx - self.centro), default=None)
         return a_numero(elegida.texto, decimal) if elegida else None
 
@@ -306,7 +309,7 @@ def leer_items(filas: list[Fila], tabla: Tabla, alto: float, encabezado: Fila, d
             break
         anterior = fila
 
-        cantidad = tabla.cantidad.numero(fila, decimal)
+        cantidad = tabla.cantidad.numero(fila, decimal, excluir=tabla.descripcion)
         total = tabla.total.numero(fila, decimal) if tabla.total else None
 
         if tabla.descripcion:

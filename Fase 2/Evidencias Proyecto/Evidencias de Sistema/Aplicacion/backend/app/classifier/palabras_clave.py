@@ -23,8 +23,9 @@ LINEAS_NUMERO = 40
 # Puntaje mínimo para aceptar una clasificación; bajo esto se devuelve "desconocido".
 PUNTAJE_MINIMO = 5
 
-# Cómo se escribe "número" después del título. El OCR suele leer "N°" como "n*", "n'", "n”" o "n?".
-MARCA_NUMERO = r"(n\s?[°º*'’\"”?.:]|nro\b|numero\b|folio\b)"
+# Cómo se escribe "número" después del título. El OCR suele leer "N°" como "n*", "n'", "n”" o "n?",
+# y en los recuadros rojos del SII escaneados como "ne" ("Ne 58210"): esa solo si sigue un número.
+MARCA_NUMERO = r"(n\s?[°º*'’\"”?.:]|ne(?=\s*\d)|nro\b|numero\b|folio\b)"
 
 # El número del documento: "4521", "178.880" (o "12,480" si el OCR lee el punto como coma),
 # "876-329-SE22" (órdenes de Mercado Público), "OC-2026-0845" (con prefijo de letras).

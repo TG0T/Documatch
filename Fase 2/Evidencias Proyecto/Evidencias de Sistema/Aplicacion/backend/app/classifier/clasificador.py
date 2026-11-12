@@ -50,7 +50,8 @@ def normalizar(texto: str) -> str:
     return re.sub(r"[ \t]+", " ", texto)
 
 
-def encabezado(texto: str, lineas_maximas: int = LINEAS_ENCABEZADO) -> str:
+def encabezado(texto: str, lineas_maximas: int | None = LINEAS_ENCABEZADO) -> str:
+    """Las primeras `lineas_maximas` líneas sin las referencias a otros documentos (None: todas)."""
     lineas = [l for l in texto.splitlines() if l.strip()]
     # Las referencias a otros documentos no son el título: en una factura, "Referencias: Orden de
     # Compra N° 8832", o un recuadro "REFERENCIAS" con una tabla debajo ("Tipo documento Folio
@@ -76,19 +77,42 @@ def tiene_titulo(patron: str, cabecera: str) -> bool:
     return bool(al_inicio or con_numero or al_final)
 
 
-def numero_documento(tipo: str, inicio: str) -> str | None:
+def primera_marca_valida(patron: str, texto: str, flags: int = 0) -> re.Match | None:
+    """La primera coincidencia cuyo número no sea el de una columna "Folio": en una tabla de
+    referencias el OCR lee "Folio" y debajo "4500019003" (el folio de la OC citada, no el del
+    documento). "Folio" solo marca el número si va en la misma línea ("Folio: 12345")."""
+    for match in re.finditer(patron, texto, flags):
+        if not (match.group("marca").startswith("folio") and "\n" in match.group("marca")):
+            return match
+    return None
+
+
+def numero_documento(tipo: str, inicio: str, completo: str = "") -> str | None:
     """El número del documento, buscado en este orden:
     1. Pegado al título: "orden de compra n°: 876-329-se22", "factura electronica n° 4521".
     2. Al final de una línea: en los recuadros del SII el número va en su propia línea ("N° 46"),
        pero el OCR suele pegarle el texto de la columna de la izquierda ("calle falsa 123 n°1").
        Una dirección ("teatinos n' 92, piso 8") no queda al final de la línea.
-    3. Hasta DISTANCIA_TITULO_NUMERO caracteres después del título."""
-    marca = rf"(?<![a-z])(?:{MARCA_NUMERO}\s*:?\s*|{MARCA_NUMERO_SII})"
+    3. Hasta DISTANCIA_TITULO_NUMERO caracteres después del título.
+    4. Solo en la línea siguiente al título, aunque el OCR haya perdido el "N°".
+    `inicio` son las primeras líneas del documento. Si ahí no está, se buscan las formas 1 y 3
+    (junto al título, que son seguras) en el documento `completo`: Tesseract lee la página por
+    columnas y el recuadro del SII puede quedar al final del texto."""
+    marca = rf"(?<![a-z])(?P<marca>{MARCA_NUMERO}\s*:?\s*|{MARCA_NUMERO_SII})"
     numero = rf"{marca}(?P<numero>{NUMERO_DOCUMENTO})"
     titulo = rf"(?:{TIPOS_DOCUMENTO[tipo]['titulo']})"
-    match = (re.search(rf"{titulo}(?:\s+electronica)?\W{{0,3}}{numero}", inicio)
-             or re.search(rf"{numero}\W*$", inicio, re.MULTILINE)
-             or re.search(rf"{titulo}[\s\S]{{0,{DISTANCIA_TITULO_NUMERO}}}?{numero}", inicio))
+    junto_al_titulo = rf"{titulo}(?:\s+electronica)?\W{{0,3}}{numero}"
+    cerca_del_titulo = rf"{titulo}[\s\S]{{0,{DISTANCIA_TITULO_NUMERO}}}?{numero}"
+    # Número solo en la línea que sigue al título, sin "N°": el OCR a veces deja el "N°" en otro
+    # renglón ("ORDEN DE COMPRA\n\n4500019037"). Una fecha no cuenta.
+    bajo_el_titulo = (rf"{titulo}(?:\s+electronica)?[ \t]*\n\s*(?P<marca>)"
+                      rf"(?!\d{{1,2}}[-/]\d{{1,2}}[-/]\d{{2,4}})(?P<numero>{NUMERO_DOCUMENTO})[ \t]*$")
+    match = (primera_marca_valida(junto_al_titulo, inicio)
+             or primera_marca_valida(rf"{numero}\W*$", inicio, re.MULTILINE)
+             or primera_marca_valida(cerca_del_titulo, inicio)
+             or primera_marca_valida(bajo_el_titulo, inicio, re.MULTILINE)
+             or primera_marca_valida(junto_al_titulo, completo)
+             or primera_marca_valida(cerca_del_titulo, completo))
     if not match:
         return None
     # Sin los separadores de miles ("178.880") y en mayúsculas, como se imprime ("SE22").
@@ -128,5 +152,6 @@ def clasificar(texto: str) -> Resultado:
         confianza=round(puntajes[ganador] / total, 2),
         puntajes=puntajes,
         coincidencias=coincidencias,
-        numero=numero_documento(ganador, encabezado(texto, LINEAS_NUMERO)),
+        # Sin las referencias, para no tomar el folio de la OC que cita una factura
+        numero=numero_documento(ganador, encabezado(texto, LINEAS_NUMERO), encabezado(texto, lineas_maximas=None)),
     )

@@ -171,9 +171,8 @@ def test_encabezado_con_texto_blanco_sobre_color():
     datos = (FIXTURES / "factura_encabezado_azul.png").read_bytes()
     items = extraer_items(extraer(datos, ".png").paginas)
     assert [i.cantidad for i in items] == [1]
-    # El total (849.000) no se revisa aquí: en este recorte Tesseract lee el 8 como 2 por lo
-    # pequeño de la letra; en la factura completa lo lee bien.
-    assert items[0].total is not None
+    # Antes se leía "249.000" (el 8 como 2) o se perdía: hoy lo corrige la segunda lectura
+    assert items[0].total == 849000
     assert "CORRECION DE CAMBER" in items[0].descripcion
     assert "GH-900" in items[0].descripcion  # segunda línea de la descripción, bajo la cantidad
     assert "FICHA" not in items[0].descripcion  # enlace "Ver ficha" de una columna sin encabezado
