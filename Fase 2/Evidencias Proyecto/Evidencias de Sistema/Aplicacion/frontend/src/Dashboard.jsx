@@ -376,7 +376,7 @@ function ColumnaItems({ titulo, total, docs, tono, onCambio }) {
   )
 }
 
-function FilaOC({ fila, onEliminar, onSubirDoc, onFinalizar, onReabrir, onCambio }) {
+function FilaOC({ fila, onEliminar, onSubirDoc, onFinalizar, onReabrir, onIngresarNumero, onCambio }) {
   const [abierta, setAbierta] = useState(false)
   const id = fila.orden.id
   const codigo = fila.orden.codigo ?? '(sin número)'
@@ -396,7 +396,17 @@ function FilaOC({ fila, onEliminar, onSubirDoc, onFinalizar, onReabrir, onCambio
         </td>
         <td className="px-3 py-3 align-top">
           <div className="flex flex-col gap-0.5">
-            <span className="font-semibold text-slate-900">{codigo}</span>
+            <span className="flex items-center gap-1.5 font-semibold text-slate-900">
+              {codigo}
+              {/* El OCR no encontró el número: se puede ingresar a mano */}
+              {!fila.orden.codigo && (
+                <button onClick={(e) => { e.stopPropagation(); onIngresarNumero(id) }}
+                  title="Ingresar el número de la orden de compra"
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-indigo-600 ring-1 ring-inset ring-indigo-200 transition hover:bg-indigo-50">
+                  <Icon name="pencil" className="h-3 w-3" /> Ingresar
+                </button>
+              )}
+            </span>
             <span className="text-xs text-slate-500">
               {fila.orden.cantidad_total != null
                 ? `${formatoCantidad(fila.orden.cantidad_total)} u. totales`
@@ -572,6 +582,26 @@ function Tablero({ filas, recargar, mensaje, setMensaje }) {
     recargar()
   }
 
+  async function ingresarNumero(id) {
+    const numero = await pedirTexto({
+      titulo: 'Número de la orden de compra',
+      texto: 'El OCR no encontró el número. Las guías y facturas que lo mencionan se vincularán a esta orden.',
+      etiqueta: 'N° de OC',
+      boton: 'Guardar',
+    })
+    if (!numero?.trim()) return
+    const res = await fetch(`/api/documentos/${id}/numero`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numero }),
+    })
+    if (!res.ok) {
+      const { detail } = await res.json()
+      await mostrarError(typeof detail === 'string' ? detail : 'Revisa el número ingresado')
+    }
+    recargar()
+  }
+
   async function reabrir(id, codigo) {
     const ok = await confirmar({
       titulo: `¿Reabrir ${codigo}?`,
@@ -714,6 +744,7 @@ function Tablero({ filas, recargar, mensaje, setMensaje }) {
                     onEliminar={eliminar}
                     onFinalizar={finalizar}
                     onReabrir={reabrir}
+                    onIngresarNumero={ingresarNumero}
                     onCambio={recargar}
                     onSubirDoc={(ordenId, contexto) => setModal({ open: true, ordenId, contexto })} />
                 ))

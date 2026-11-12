@@ -245,6 +245,39 @@ def editar_cantidades(documento_id: int,
     return a_dict(doc)
 
 
+FORMATO_NUMERO = re.compile(r"[A-Za-z0-9][A-Za-z0-9./-]*")
+
+
+@router.put("/{documento_id}/numero")
+def ingresar_numero(documento_id: int, numero: str = Body(embed=True, max_length=50), db: Session = Depends(get_db)):
+    """Ingresa a mano el número de un documento que el OCR no encontró. Una OC con número nuevo
+    se vincula con las guías y facturas sueltas que lo mencionan."""
+    doc = obtener_o_404(db, documento_id)
+    if doc.numero:
+        raise HTTPException(409, f"El documento ya tiene número: {codigo(doc.tipo, doc.numero)}")
+    if doc.tipo not in TIPOS_DOCUMENTO:
+        raise HTTPException(409, "No se puede asignar número a un documento de tipo desconocido")
+    numero = re.sub(r"\s+", "", numero)
+    prefijo = TIPOS_DOCUMENTO[doc.tipo]["prefijo"]
+    if numero.upper().startswith(f"{prefijo}-"):  # "OC-123" -> "123"
+        numero = numero[len(prefijo) + 1:]
+    if not FORMATO_NUMERO.fullmatch(numero):
+        raise HTTPException(422, "El número solo puede tener letras, dígitos, puntos, guiones o barras")
+    if duplicado := buscar_duplicado(db, Documento.tipo == doc.tipo, Documento.id != doc.id,
+                                     Documento.numero.in_([numero, f"{prefijo}-{numero}"])):
+        raise HTTPException(409, f"Ese número ya existe: {describir(duplicado)}")
+    doc.numero = numero
+    try:
+        db.commit()
+    except IntegrityError as e:  # otro documento tomó el número entre la validación y el guardado
+        db.rollback()
+        raise HTTPException(409, "Ese número ya existe") from e
+    if doc.tipo == "orden_compra":
+        vincular_sueltos(db, doc)
+    db.refresh(doc)
+    return a_dict(doc)
+
+
 @router.get("/{documento_id}/archivo")
 def descargar_archivo(documento_id: int, db: Session = Depends(get_db)):
     doc = obtener_o_404(db, documento_id)

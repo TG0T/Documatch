@@ -195,6 +195,36 @@ def test_guia_sin_tabla_de_items_recibe_el_total():
     client.delete(f"/api/documentos/{id_}")
 
 
+def test_ingresar_numero_de_una_oc_sin_numero_la_vincula():
+    from app.db import SessionLocal
+    from app.models import Documento
+
+    with SessionLocal() as db:
+        orden = Documento(nombre_original="oc.pdf", nombre_guardado="oc-sin-numero", tipo_contenido="application/pdf",
+                          tamano=0, tipo="orden_compra", numero=None, confianza=0.6, puntajes={},
+                          coincidencias={}, texto="")
+        guia = Documento(nombre_original="g.pdf", nombre_guardado="guia-ref-oc", tipo_contenido="application/pdf",
+                         tamano=0, tipo="guia_despacho", numero="777", confianza=0.9, puntajes={},
+                         coincidencias={}, texto="Guia de despacho\nOrden de compra N° 4500019006")
+        db.add_all([orden, guia])
+        db.commit()
+        orden_id, guia_id = orden.id, guia.id
+
+    assert client.put(f"/api/documentos/{orden_id}/numero", json={"numero": "45 00?"}).status_code == 422
+    r = client.put(f"/api/documentos/{orden_id}/numero", json={"numero": " OC-4500019006 "})
+    assert r.status_code == 200
+    assert r.json()["numero"] == "4500019006" and r.json()["codigo"] == "OC-4500019006"
+    # La guía que menciona el número quedó vinculada
+    assert client.get(f"/api/documentos/{guia_id}").json()["orden_id"] == orden_id
+    # Ya tiene número: no se cambia
+    assert client.put(f"/api/documentos/{orden_id}/numero", json={"numero": "1"}).status_code == 409
+    # Otro documento del mismo tipo no puede repetir el número
+    sin_numero = guia_suelta(0.5, None)
+    assert client.put(f"/api/documentos/{sin_numero}/numero", json={"numero": "G-777"}).status_code == 409
+    for id_ in (orden_id, guia_id, sin_numero):
+        client.delete(f"/api/documentos/{id_}")
+
+
 def test_no_se_editan_guias_con_confianza_suficiente_ni_otros_documentos():
     id_ = guia_suelta(0.65, [{"descripcion": "Taladro", "cantidad": 1, "total": None}])
     assert client.get(f"/api/documentos/{id_}").json()["cantidades_editables"] is False
