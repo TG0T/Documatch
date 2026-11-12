@@ -17,12 +17,14 @@ Proyecto Capstone (APT122) — DuocUC.
 - **Dashboard de conciliación:**
   - una fila por orden de compra con sus guías y facturas;
   - avance del despacho y desglose de ítems;
+  - confianza del escaneo de cada documento (verde, ámbar o rojo, con el porcentaje);
   - estado de cada orden: *Conciliado*, *Despacho parcial*, *Discrepancia*, *Pendiente* o *Finalizada*.
+- **Indicadores:** órdenes al día, montos comprometido y facturado, cumplimiento de despacho, discrepancias abiertas y calidad de lectura del OCR, con gráficos por estado, por orden y por mes, y la lista de órdenes que requieren atención.
 - **Corrección de cantidades:** en una guía de despacho clasificada con menos de 65 % de confianza se pueden corregir a mano las cantidades leídas, desde el clasificador o desde el desglose del dashboard.
 - **Sin duplicados:** no se acepta dos veces el mismo archivo ni dos documentos del mismo tipo con el mismo número (por ejemplo, dos `F-123`). La base de datos también lo impide.
 - **Vinculación automática:** una guía o factura que menciona el número de su OC en las referencias se agrega sola a la fila de esa OC.
 - **Cierre de despachos parciales:** una OC que recibió menos de lo pedido, y a la que solo se le facturó lo recibido, se puede dar por terminada indicando un motivo (por ejemplo, un acuerdo con el proveedor).
-- **Datos de ejemplo** (dummies) para probar el dashboard sin subir archivos.
+- **Documentos de prueba** en formato chileno (OC, guía y factura con empresas y RUT ficticios), con generadores para crear lotes en PDF e imagen. Ver [Documentos de prueba](#documentos-de-prueba).
 
 ## Estructura del repositorio
 
@@ -42,8 +44,10 @@ Fase 2/
         │   │   │   ├── services/ocr.py OCR de imágenes y PDF
         │   │   │   └── seguimiento.py  Comparación OC / guías / facturas
         │   │   └── tests/
-        │   └── frontend/               Interfaz en React + Vite + Tailwind
-        └── Base de Datos/              Esquema SQLite (schema.sql) y la base documatch.db
+        │   └── frontend/               Interfaz en React + Vite + Tailwind (dashboard, indicadores y clasificador)
+        ├── Base de Datos/              Esquema SQLite (schema.sql) y la base documatch.db
+        └── Documentos de prueba/       3 juegos OC–guía–factura en PDF y los scripts que los generan
+Documentos de prueba/           Lote generado con generar_lote.py (no se sube a git)
 ```
 
 ## Requisitos
@@ -97,6 +101,22 @@ cd "Fase 2/Evidencias Proyecto/Evidencias de Sistema/Aplicacion/backend"
 pytest
 ```
 
+### Documentos de prueba
+
+En `Evidencias de Sistema/Documentos de prueba/` hay 3 juegos de orden de compra, guía de despacho y factura en PDF, uno por escenario: conciliado, despacho parcial y discrepancia. Para la demo, se suben en orden (OC, guía y factura) desde *Nueva carga* en el dashboard. Las empresas y los RUT son ficticios, y cada documento dice "Documento de prueba – sin validez tributaria".
+
+Para volver a crearlos o generar un lote más grande, se usa el Python del backend:
+
+```powershell
+cd "Fase 2/Evidencias Proyecto/Evidencias de Sistema"
+# Los 3 juegos en PDF
+.\Aplicacion\backend\.venv\Scripts\python.exe "Documentos de prueba\generar_documentos.py" "Documentos de prueba"
+# Un lote variado: 12 juegos, 6 escenarios, en PDF, PNG, JPG escaneado y PDF escaneado
+.\Aplicacion\backend\.venv\Scripts\python.exe "Documentos de prueba\generar_lote.py" "..\..\..\Documentos de prueba" 12
+```
+
+El lote incluye un `esperado.csv` con el tipo, el folio, las cantidades, el valor neto y el estado que debería mostrar el dashboard para cada documento. La misma semilla genera siempre el mismo lote.
+
 ## Configuración
 
 Son variables de entorno opcionales y se definen antes de iniciar el backend:
@@ -117,16 +137,24 @@ Ejemplo en PowerShell: `$env:TESSERACT_CMD = "D:\Tesseract\tesseract.exe"`
    - **Imágenes:** antes del OCR se preprocesan:
      - escala de grises que oscurece el texto de color (los títulos rojos del SII);
      - más contraste y tamaño;
+     - se enderezan los escaneos torcidos (hasta 3°), porque con apenas 1° de giro la cantidad y la descripción de una fila se leían como filas distintas;
+     - los encabezados con texto blanco sobre color se invierten;
      - se borran las líneas y sombreados de las tablas, que confunden a Tesseract.
+   - **Dos lecturas combinadas:** Tesseract lee cada imagen de dos formas, la normal y la de texto disperso. La segunda recupera las celdas que la primera se salta y corrige dígitos mal leídos; de cada palabra se queda la lectura con más confianza.
+   - **Corrección de números:** los números cortos leídos con poca confianza se vuelven a leer solos, aceptando solo dígitos, y los números que el OCR partió en dos se unen.
 2. **Clasificación** ([palabras_clave.py](Fase%202/Evidencias%20Proyecto/Evidencias%20de%20Sistema/Aplicacion/backend/app/classifier/palabras_clave.py)):
    - cada tipo de documento suma puntos por las palabras clave que aparecen en el texto;
    - el título en el encabezado da un bono;
    - se ignoran las referencias a otros documentos (por ejemplo, la OC que cita una factura).
-3. **Número del documento:** se busca junto al título o en el recuadro del SII. Se toleran las lecturas típicas del OCR para "N°", como `n*`, `n”` o `n2`.
+3. **Número del documento:**
+   - se busca junto al título o en el recuadro del SII, aunque el OCR lo haya dejado al final del texto o en la línea bajo el título;
+   - se toleran las lecturas típicas del OCR para "N°", como `n*`, `n”`, `n2` o `ne`;
+   - la columna *Folio* de las referencias no se confunde con el número propio.
 4. **Mercancías** ([mercancias.py](Fase%202/Evidencias%20Proyecto/Evidencias%20de%20Sistema/Aplicacion/backend/app/extraccion/mercancias.py)):
    - se busca el encabezado de la tabla que tiene la columna *Cantidad*;
    - en cada fila se lee el número que queda bajo esa columna y bajo la del valor total;
-   - se usa la posición de cada palabra, no el texto plano.
+   - se usa la posición de cada palabra, no el texto plano;
+   - los números de la descripción, como el "50" de "(caja 50)", no se toman como cantidad.
 5. **Conciliación** ([seguimiento.py](Fase%202/Evidencias%20Proyecto/Evidencias%20de%20Sistema/Aplicacion/backend/app/seguimiento.py)):
    - se compara la cantidad total pedida con la suma de las guías;
    - y lo despachado con la suma de las facturas.
@@ -150,16 +178,16 @@ Ejemplo en PowerShell: `$env:TESSERACT_CMD = "D:\Tesseract\tesseract.exe"`
 | `GET` | `/api/documentos/{id}/archivo` | Archivo original. |
 | `GET` | `/api/dashboard` | Filas del dashboard con estado, cantidades y avance. |
 | `POST` / `DELETE` | `/api/ordenes/{id}/finalizar` | Finaliza (con `{"motivo": "..."}` opcional) o reabre una OC. |
-| `POST` / `DELETE` | `/api/dummies` | Crea (`?escenario=ok\|parcial\|discrepancia\|pendiente`) o borra datos de ejemplo. |
+| `POST` / `DELETE` | `/api/dummies` | Crea (`?escenario=ok\|parcial\|discrepancia\|pendiente\|baja_confianza`) o borra datos de ejemplo (solo por la API; no aparecen en la interfaz). |
 
 El detalle completo de la API está en http://127.0.0.1:8000/docs.
 
 ## Limitaciones conocidas
 
 - **Se comparan cantidades totales, no producto por producto.** El OCR escribe la misma descripción de forma distinta en cada documento, así que emparejar ítems no es confiable. Si una guía trae 5 unidades de A en vez de 5 de B, el total coincide y no se detecta.
-- **La lectura depende de la calidad de la imagen.** Las fotos borrosas, torcidas o con poca luz pueden dar cantidades o números incorrectos. Para eso existe la verificación contra el neto impreso.
+- **La lectura depende de la calidad de la imagen.** Con 480 documentos de prueba (PDF, imágenes y escaneos simulados en gris, levemente torcidos y con ruido) la lectura fue correcta en todos. Pero las fotos con celular en ángulo, con sombras o en papel arrugado pueden dar cantidades o números incorrectos. Para eso existe la verificación contra el neto impreso.
+- **Leer una imagen toma unos segundos:** unos 3 s una imagen limpia y unos 4,5 s un escaneo, por las dos lecturas y el enderezado. Un PDF con texto digital es instantáneo.
 - **Los duplicados se detectan por tipo y número, sin el RUT del emisor**, porque el sistema todavía no lo lee. Si dos proveedores distintos emiten la factura 123, la segunda se rechaza. Si el OCR lee mal un número, puede chocar con el de otro documento. En los dos casos el mensaje indica qué documento ya existe.
-- Hay dos tests de `test_mercancias.py` que fallan desde antes de los últimos cambios: `test_borde_de_celda_pegado_al_encabezado` y `test_orden_de_compra_con_punto_decimal`.
 
 ## Equipo
 
