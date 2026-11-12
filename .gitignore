@@ -32,3 +32,6 @@ Desktop.ini
 
 # Script local de inicialización
 /iniciar.ps1
+
+# Lote de documentos de prueba (se regenera con "Documentos de prueba/generar_lote.py" de Evidencias de Sistema)
+/Documentos de prueba/
